@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.7';
+const APP_VERSION='1.8';
 const $=id=>document.getElementById(id);
 const GRID={W:1650,H:1275,table:[[88,111],[1555,111],[1555,982],[88,982]],xs:[88,317.5,425.5,542.5,656.5,767.5,854.5,1006.5,1096.5,1179.5,1273.5,1361,1454.5,1554.5],ys:[111.5,150.5,200.5,260.5,321.5,379.5,440.5,500.5,560.5,621.5,681.5,742.5,800.5,860.5,921.5,981.5],stats:[['p0',1],['p1',2],['p2',3],['p3',4],['A',6],['K',7],['E',8],['SA',10],['SE',11],['B',12]],headers:{date:[125,48,390,112],opponent:[515,48,875,112],setScore:[1005,42,1555,118]}};
 const DB_NAME='volleyStatsOfflineDB',DB_VER=1;let db=null,settings=null,sheets=[],currentFile=null,currentSourceBlob=null,currentProcessedBlob=null,currentImage=null,currentCorners=[],currentAnalysis=null,ocrWorker=null,editingId=null,currentRotation=0,currentWarpedCanvas=null,currentGrid=null,currentInspect=null,currentRosterOCR=null;
@@ -42,7 +42,7 @@ function putSheet(s){return new Promise((res,rej)=>{const t=db.transaction('shee
 function deleteSheet(id){return new Promise((res,rej)=>{const t=db.transaction('sheets','readwrite').objectStore('sheets').delete(id);t.onsuccess=()=>res();t.onerror=()=>rej(t.error)})}
 
 function makeRoster(){return Array.from({length:12},(_,i)=>({id:uid(),number:'',name:'Player '+(i+1)}))}
-function defaultSettings(){const t1={id:uid(),name:'Team 1',roster:makeRoster()},t2={id:uid(),name:'Team 2',roster:makeRoster()};return {seasonName:'2026 Volleyball',teams:[t1,t2],activeTeamId:t1.id,teamName:t1.name,roster:t1.roster,markUnit:null,markSamples:0,tallyProfile:'short-pen-ticks-v1'}}
+function defaultSettings(){const t1={id:uid(),name:'Team 1',roster:makeRoster()},t2={id:uid(),name:'Team 2',roster:makeRoster()};return {seasonName:'2026 Volleyball',teams:[t1,t2],activeTeamId:t1.id,teamName:t1.name,roster:t1.roster,markUnit:null,markSamples:0,tallyProfile:'blue-ink-strokes-v2'}}
 function migrateTeams(){if(!Array.isArray(settings.teams)||!settings.teams.length){const old={id:uid(),name:settings.teamName||'Team 1',roster:Array.isArray(settings.roster)&&settings.roster.length?settings.roster:makeRoster()};settings.teams=[old,{id:uid(),name:'Team 2',roster:makeRoster()}];settings.activeTeamId=old.id}while(settings.teams.length<2)settings.teams.push({id:uid(),name:'Team '+(settings.teams.length+1),roster:makeRoster()});const t=settings.teams.find(x=>x.id===settings.activeTeamId)||settings.teams[0];settings.activeTeamId=t.id;settings.teamName=t.name;settings.roster=t.roster}
 function activeTeam(){migrateTeams();return settings.teams.find(t=>t.id===settings.activeTeamId)||settings.teams[0]}
 function activateTeam(id,save=false){migrateTeams();const t=settings.teams.find(x=>x.id===id)||settings.teams[0];settings.activeTeamId=t.id;settings.teamName=t.name;settings.roster=t.roster;if(save&&db)kvSet('settings',settings).catch(()=>{});fillTeamSelects();}
@@ -79,7 +79,7 @@ function renderRosterEditor(){const box=$('rosterEditor');box.innerHTML='';setti
 function moveRoster(i,d){const j=i+d;if(j<0||j>=settings.roster.length)return;[settings.roster[i],settings.roster[j]]=[settings.roster[j],settings.roster[i]];renderRosterEditor()}
 async function saveRoster(){const t=activeTeam();t.name=$('teamName').value.trim()||t.name||'Team';t.roster=settings.roster.slice(0,12);settings.teamName=t.name;settings.roster=t.roster;await kvSet('settings',settings);fillTeamSelects();renderAll();flash('Team and roster saved.','good')}
 async function saveSetup(){settings.seasonName=$('seasonName').value.trim()||'Volleyball Season';await kvSet('settings',settings);renderAll();flash('Season settings saved.','good')}
-function renderCalibration(){$('calibrationInfo').textContent=settings.markUnit?`Current learned mark size: ${settings.markUnit.toFixed(1)} ink pixels per tally (${settings.markSamples||0} verified samples).`:'No learned calibration yet. The first verified sheets will teach the app your tally style.'}
+function renderCalibration(){$('calibrationInfo').textContent='v1.8 uses blue-ink stroke recognition. Black/grey grid lines and printed text are ignored before tally counting; verified corrections are still saved with each sheet.'}
 function flash(msg,type=''){$('seasonSub').textContent=msg;setTimeout(()=>$('seasonSub').textContent='Private • offline season tracker',2600)}
 
 async function loadPhoto(file){if(!file)return;editingId=null;currentFile=file;currentCorners=[];currentAnalysis=null;currentProcessedBlob=null;currentWarpedCanvas=null;currentGrid=null;currentInspect=null;$('captureWork').classList.remove('hide');showView('capture');$('verifyWrap').classList.add('hide');$('verifyEmpty').classList.remove('hide');$('cellInspector').classList.add('hide');$('saveSheetBtn').disabled=true;$('ocrStatus').textContent='Header OCR will run after alignment.';$('sheetDate').value=today();$('sheetOpponent').value='';$('sheetEvent').value='';$('sheetSet').value='';$('ourScore').value='';$('oppScore').value='';
@@ -137,24 +137,91 @@ function solveLinear(A,b){const n=b.length,M=A.map((r,i)=>r.slice().concat(b[i])
 function homography(from,to){const A=[],b=[];for(let i=0;i<4;i++){const [x,y]=from[i],[u,v]=to[i];A.push([x,y,1,0,0,0,-u*x,-u*y]);b.push(u);A.push([0,0,0,x,y,1,-v*x,-v*y]);b.push(v)}const h=solveLinear(A,b);return [...h,1]}
 function warpCanvas(srcCanvas,srcPts){const out=document.createElement('canvas');out.width=GRID.W;out.height=GRID.H;const sctx=srcCanvas.getContext('2d',{willReadFrequently:true}),s=sctx.getImageData(0,0,srcCanvas.width,srcCanvas.height),octx=out.getContext('2d'),o=octx.createImageData(out.width,out.height);const dst=GRID.table,H=homography(dst,srcPts.map(p=>[p.x,p.y]));const sd=s.data,od=o.data,sw=srcCanvas.width,sh=srcCanvas.height,W=out.width,Hh=out.height;for(let y=0;y<Hh;y++){for(let x=0;x<W;x++){const z=H[6]*x+H[7]*y+H[8],sx=(H[0]*x+H[1]*y+H[2])/z,sy=(H[3]*x+H[4]*y+H[5])/z,di=(y*W+x)*4;if(sx>=0&&sy>=0&&sx<sw-1&&sy<sh-1){const ix=Math.round(sx),iy=Math.round(sy),si=(iy*sw+ix)*4;od[di]=sd[si];od[di+1]=sd[si+1];od[di+2]=sd[si+2];od[di+3]=255}else{od[di]=od[di+1]=od[di+2]=255;od[di+3]=255}}}octx.putImageData(o,0,0);return out}
 
-async function analyzeCurrent(){if(currentCorners.length!==4)return;$('analyzeBtn').disabled=true;$('alignStatus').textContent='Straightening the sheet…';await nextFrame();try{const warped=warpCanvas($('alignCanvas'),currentCorners);currentWarpedCanvas=warped;currentGrid=GRID;currentProcessedBlob=await canvasBlob(warped,.86);$('alignStatus').textContent='Aligned. Reading roster to identify the team…';await nextFrame();try{await detectTeamFromRoster(warped)}catch(e){console.warn('Team OCR unavailable',e)}$('alignStatus').textContent='Counting tally marks…';currentAnalysis=analyzeTallies(warped);renderVerify();$('verifyEmpty').classList.add('hide');$('verifyWrap').classList.remove('hide');$('saveSheetBtn').disabled=false;runHeaderOCR(warped).catch(e=>{$('ocrStatus').className='status warn';$('ocrStatus').textContent='OCR could not read every header field. Verify the highlighted information manually.';console.warn(e)});$('alignStatus').className='status good';$('alignStatus').textContent=`Tally analysis complete. ${currentAnalysis.uncertain} cells are flagged for a quick check.`}catch(e){$('alignStatus').className='status bad';$('alignStatus').textContent=e.message||String(e)}finally{$('analyzeBtn').disabled=false}}
+async function analyzeCurrent(){if(currentCorners.length!==4)return;$('analyzeBtn').disabled=true;$('alignStatus').textContent='Straightening the sheet…';await nextFrame();try{const warped=warpCanvas($('alignCanvas'),currentCorners);currentWarpedCanvas=warped;currentGrid=GRID;currentProcessedBlob=await canvasBlob(warped,.86);$('alignStatus').textContent='Aligned. Reading roster to identify the team…';await nextFrame();try{await detectTeamFromRoster(warped)}catch(e){console.warn('Team OCR unavailable',e)}$('alignStatus').textContent='Isolating blue pen and counting tally strokes…';currentAnalysis=analyzeTallies(warped);renderVerify();$('verifyEmpty').classList.add('hide');$('verifyWrap').classList.remove('hide');$('saveSheetBtn').disabled=false;runHeaderOCR(warped).catch(e=>{$('ocrStatus').className='status warn';$('ocrStatus').textContent='OCR could not read every header field. Verify the highlighted information manually.';console.warn(e)});$('alignStatus').className='status good';$('alignStatus').textContent=`Blue-ink analysis complete. ${currentAnalysis.uncertain} cells are flagged for a quick check.`}catch(e){$('alignStatus').className='status bad';$('alignStatus').textContent=e.message||String(e)}finally{$('analyzeBtn').disabled=false}}
 function nextFrame(){return new Promise(r=>requestAnimationFrame(()=>setTimeout(r,10)))}
 function canvasBlob(c,q=.85){return new Promise(r=>c.toBlob(r,'image/jpeg',q))}
 
 function groupsFromFlags(flags,gap=1){const out=[];let i=0;while(i<flags.length){if(!flags[i]){i++;continue}let a=i,last=i,miss=0;i++;while(i<flags.length){if(flags[i]){last=i;miss=0;i++;continue}miss++;if(miss>gap)break;i++}out.push([a,last]);}return out}
-function cellInfo(ctx,x0,x1,y0,y1){const insetX=Math.max(6,Math.round((x1-x0)*.07)),insetY=Math.max(7,Math.round((y1-y0)*.16)),x=Math.round(x0+insetX),y=Math.round(y0+insetY),w=Math.max(4,Math.round(x1-x0-2*insetX)),h=Math.max(4,Math.round(y1-y0-2*insetY));const im=ctx.getImageData(x,y,w,h),d=im.data;let vals=[];for(let i=0;i<d.length;i+=16)vals.push((d[i]*.299+d[i+1]*.587+d[i+2]*.114));const bg=median(vals),thr=clamp(bg-62,65,180);const mask=new Uint8Array(w*h),xCount=new Uint16Array(w),yCount=new Uint16Array(h);for(let p=0,i=0;p<mask.length;p++,i+=4){const g=d[i]*.299+d[i+1]*.587+d[i+2]*.114;if(g<thr){mask[p]=1;const xx=p%w,yy=(p/w)|0;xCount[xx]++;yCount[yy]++}}const xFlags=Array.from(xCount,v=>v>=Math.max(3,Math.round(h*.16))),xGroups=groupsFromFlags(xFlags,1).filter(([a,b])=>b-a+1<=Math.max(12,w*.16));let strokeCount=xGroups.length;const wideHorizontal=Math.max(...yCount,0)>=Math.max(10,Math.round(w*.16));if(strokeCount===4&&wideHorizontal)strokeCount=5;const seen=new Uint8Array(mask.length),areas=[],stack=[];for(let p=0;p<mask.length;p++){if(!mask[p]||seen[p])continue;seen[p]=1;stack.length=0;stack.push(p);let area=0;while(stack.length){const q=stack.pop();area++;const xx=q%w,yy=(q/w)|0;if(xx>0){const n=q-1;if(mask[n]&&!seen[n]){seen[n]=1;stack.push(n)}}if(xx<w-1){const n=q+1;if(mask[n]&&!seen[n]){seen[n]=1;stack.push(n)}}if(yy>0){const n=q-w;if(mask[n]&&!seen[n]){seen[n]=1;stack.push(n)}}if(yy<h-1){const n=q+w;if(mask[n]&&!seen[n]){seen[n]=1;stack.push(n)}}}if(area>=8)areas.push(area)}return {ink:areas.reduce((a,b)=>a+b,0),areas,w,h,threshold:thr,x,y,strokeCount,wideHorizontal}}
-function analyzeTallies(canvas){const ctx=canvas.getContext('2d',{willReadFrequently:true}),raw=[];for(let r=0;r<Math.min(12,settings.roster.length);r++){const y0=GRID.ys[1+r],y1=GRID.ys[2+r];for(const [key,ci] of GRID.stats){raw.push({r,key,...cellInfo(ctx,GRID.xs[ci],GRID.xs[ci+1],y0,y1)})}}let unit=settings.markUnit;const singles=raw.filter(c=>c.strokeCount===1&&c.ink>=12&&c.ink<=700).map(c=>c.ink);if(!unit&&singles.length>=2)unit=median(singles);if(!unit||!Number.isFinite(unit))unit=110;const rows=settings.roster.slice(0,12).map(p=>({playerId:p.id,values:{p0:0,p1:0,p2:0,p3:0,A:0,K:0,E:0,SA:0,SE:0,B:0},meta:{}}));let uncertain=0;for(const c of raw){let est=0;if(c.ink>Math.max(10,unit*.18)){const areaEst=Math.max(1,Math.round(c.ink/unit));if(c.strokeCount>0){est=c.strokeCount;if(areaEst>est+2)est=Math.round((est+areaEst)/2)}else est=areaEst}est=clamp(est,0,60);const ratio=est?c.ink/(unit*est):0;const low=est>0&&(ratio<.42||ratio>2.1||Math.abs((c.strokeCount||est)-est)>2)||(!est&&c.ink>unit*.55);if(low)uncertain++;rows[c.r].values[c.key]=est;rows[c.r].meta[c.key]={ink:c.ink,auto:est,low,areas:c.areas.length,strokeCount:c.strokeCount}}return {rows,unitUsed:unit,uncertain}}
+function bluePixel(r,g,b){
+ // Blue/purple ballpoint: require chroma, and blue must clearly exceed red.
+ // Neutral black/grey grid ink has almost no channel separation and is rejected.
+ const mx=Math.max(r,g,b),mn=Math.min(r,g,b),sat=mx?((mx-mn)/mx):0;
+ return sat>=0.16 && (b-r)>=14 && b>=g-10 && r<205;
+}
+function groupsFromArray(flags,gap=1){const out=[];let i=0;while(i<flags.length){if(!flags[i]){i++;continue}let a=i,last=i,miss=0;i++;while(i<flags.length){if(flags[i]){last=i;miss=0;i++;continue}miss++;if(miss>gap)break;i++}out.push([a,last]);}return out}
+function blueCellInfo(ctx,x0,x1,y0,y1){
+ const padX=Math.max(7,Math.round((x1-x0)*.09)),padY=Math.max(6,Math.round((y1-y0)*.12));
+ const x=Math.round(x0+padX),y=Math.round(y0+padY),w=Math.max(8,Math.round(x1-x0-2*padX)),h=Math.max(8,Math.round(y1-y0-2*padY));
+ const im=ctx.getImageData(x,y,w,h),d=im.data,mask=new Uint8Array(w*h),xc=new Uint16Array(w),yc=new Uint16Array(h);
+ let blue=0;
+ for(let p=0,i=0;p<mask.length;p++,i+=4){if(bluePixel(d[i],d[i+1],d[i+2])){mask[p]=1;blue++;xc[p%w]++;yc[(p/w)|0]++}}
+ // Absolutely blank cells should stay zero. This is deliberately conservative.
+ const blankFloor=Math.max(7,Math.round(w*h*.0018));
+ if(blue<blankFloor)return {x,y,w,h,blue,vertical:0,slash:0,count:0,low:false,mask};
+ // Vertical tally strokes create columns with blue pixels through a meaningful part of cell height.
+ const colThreshold=Math.max(3,Math.round(h*.11));
+ const vf=Array.from(xc,v=>v>=colThreshold);
+ let vg=groupsFromArray(vf,1).filter(([a,b])=>{const ww=b-a+1;return ww<=Math.max(10,w*.15)});
+ // Merge groups separated only by a one/two-pixel ragged edge, but keep real adjacent strokes distinct.
+ const centers=vg.map(([a,b])=>(a+b)/2);
+ // Remove pixels near detected vertical strokes. A fifth/slash mark remains as a broad diagonal residue.
+ const residual=new Uint8Array(mask.length);let residualCount=0,minx=w,miny=h,maxx=-1,maxy=-1;
+ for(let yy=0;yy<h;yy++)for(let xx=0;xx<w;xx++){
+   const p=yy*w+xx;if(!mask[p])continue;
+   let near=false;for(const c of centers)if(Math.abs(xx-c)<=Math.max(2,Math.round(w*.025))){near=true;break}
+   if(!near){residual[p]=1;residualCount++;minx=Math.min(minx,xx);maxx=Math.max(maxx,xx);miny=Math.min(miny,yy);maxy=Math.max(maxy,yy)}
+ }
+ let slash=0;
+ if(residualCount>=Math.max(7,Math.round(blue*.10))&&maxx>=minx){
+   const bw=maxx-minx+1,bh=maxy-miny+1;
+   // A cross/fifth mark is broad in x and has meaningful y movement; dots/noise are not.
+   if(bw>=w*.20 && bh>=h*.16){
+     // Regression correlation distinguishes a diagonal stroke from scattered residue.
+     let n=0,sx=0,sy=0,sxx=0,syy=0,sxy=0;
+     for(let yy=0;yy<h;yy++)for(let xx=0;xx<w;xx++)if(residual[yy*w+xx]){n++;sx+=xx;sy+=yy;sxx+=xx*xx;syy+=yy*yy;sxy+=xx*yy}
+     const cov=n*sxy-sx*sy,dx=n*sxx-sx*sx,dy=n*syy-sy*sy;
+     const corr=(dx>0&&dy>0)?Math.abs(cov/Math.sqrt(dx*dy)):0;
+     if(corr>=.28)slash=1;
+   }
+ }
+ let count=centers.length+slash;
+ // If colour exists but projection missed a tiny handwritten stroke, treat one compact component as one tally.
+ if(count===0&&blue>=blankFloor*1.5)count=1;
+ count=clamp(count,0,40);
+ const density=blue/(w*h);
+ const low=(blue>0&&count===0)||density>.20||count>15|| (slash&&centers.length<3);
+ return {x,y,w,h,blue,vertical:centers.length,slash,count,low,mask,density};
+}
+function analyzeTallies(canvas){
+ const ctx=canvas.getContext('2d',{willReadFrequently:true}),rows=settings.roster.slice(0,12).map(p=>({playerId:p.id,values:{p0:0,p1:0,p2:0,p3:0,A:0,K:0,E:0,SA:0,SE:0,B:0},meta:{}}));
+ let uncertain=0,blueCells=0;
+ for(let r=0;r<rows.length;r++){
+  const y0=GRID.ys[1+r],y1=GRID.ys[2+r];
+  for(const [key,ci] of GRID.stats){
+   const c=blueCellInfo(ctx,GRID.xs[ci],GRID.xs[ci+1],y0,y1);if(c.blue)blueCells++;if(c.low)uncertain++;
+   rows[r].values[key]=c.count;rows[r].meta[key]={ink:c.blue,blue:c.blue,vertical:c.vertical,slash:c.slash,auto:c.count,low:c.low,density:c.density||0};
+  }
+ }
+ return {rows,unitUsed:null,uncertain,blueCells,method:'blue-ink-strokes-v2'};
+}
 function calcRow(v){const rec=v.p0+v.p1+v.p2+v.p3,pass=rec?((v.p1+2*v.p2+3*v.p3)/rec):NaN,hit=v.A?((v.K-v.E)/v.A):NaN;return {rec,pass,hit,kill:v.A?v.K/v.A:NaN,error:v.A?v.E/v.A:NaN}}
 function renderVerify(){const body=$('verifyBody');body.innerHTML='';if(!currentAnalysis)return;currentAnalysis.rows.forEach((row,i)=>{const p=settings.roster.find(x=>x.id===row.playerId)||{name:'Player '+(i+1),number:''},c=calcRow(row.values),tr=document.createElement('tr');const input=k=>`<input inputmode="numeric" type="number" min="0" max="99" data-r="${i}" data-k="${k}" value="${row.values[k]}" class="${row.meta[k]?.low?'uncertain':''}">`;tr.innerHTML=`<td>${esc((p.number?'#'+p.number+' ':'')+p.name)}</td><td>${input('p0')}</td><td>${input('p1')}</td><td>${input('p2')}</td><td>${input('p3')}</td><td class="calc" data-calc="pass-${i}">${fmt(c.pass,2)}</td><td>${input('A')}</td><td>${input('K')}</td><td>${input('E')}</td><td class="calc" data-calc="hit-${i}">${Number.isFinite(c.hit)?c.hit.toFixed(3):'—'}</td><td>${input('SA')}</td><td>${input('SE')}</td><td>${input('B')}</td>`;body.appendChild(tr)});body.querySelectorAll('input').forEach(inp=>inp.addEventListener('input',e=>{const r=+e.target.dataset.r,k=e.target.dataset.k;currentAnalysis.rows[r].values[k]=clamp(parseInt(e.target.value||'0',10)||0,0,99);e.target.classList.remove('uncertain');currentAnalysis.rows[r].meta[k].low=false;const c=calcRow(currentAnalysis.rows[r].values);body.querySelector(`[data-calc="pass-${r}"]`).textContent=fmt(c.pass,2);body.querySelector(`[data-calc="hit-${r}"]`).textContent=Number.isFinite(c.hit)?c.hit.toFixed(3):'—'}));body.querySelectorAll('input').forEach(inp=>{inp.addEventListener('focus',()=>showCellInspect(+inp.dataset.r,inp.dataset.k));inp.addEventListener('click',()=>showCellInspect(+inp.dataset.r,inp.dataset.k))})}
 
 function statColIndex(key){const hit=GRID.stats.find(x=>x[0]===key);return hit?hit[1]:null}
-function showCellInspect(r,key){if(!currentWarpedCanvas)return;const ci=statColIndex(key);if(ci==null)return;currentInspect={r,key};const y0=GRID.ys[1+r],y1=GRID.ys[2+r],x0=GRID.xs[ci],x1=GRID.xs[ci+1],c=$('inspectCanvas');c.width=360;c.height=150;const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);ctx.imageSmoothingEnabled=true;ctx.drawImage(currentWarpedCanvas,x0+2,y0+2,x1-x0-4,y1-y0-4,0,0,c.width,c.height);const p=settings.roster[r]||{name:'Player'},v=currentAnalysis.rows[r].values[key];$('inspectLabel').textContent=`${p.number?'#'+p.number+' ':''}${p.name} • ${key==='p0'?'0 pass':key==='p1'?'1 pass':key==='p2'?'2 pass':key==='p3'?'3 pass':key} • detected ${v}`;$('cellInspector').classList.remove('hide')}
+function showCellInspect(r,key){if(!currentWarpedCanvas)return;const ci=statColIndex(key);if(ci==null)return;currentInspect={r,key};const y0=GRID.ys[1+r],y1=GRID.ys[2+r],x0=GRID.xs[ci],x1=GRID.xs[ci+1],c=$('inspectCanvas');c.width=360;c.height=150;const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);ctx.imageSmoothingEnabled=true;ctx.drawImage(currentWarpedCanvas,x0+2,y0+2,x1-x0-4,y1-y0-4,0,0,c.width,c.height);const p=settings.roster[r]||{name:'Player'},v=currentAnalysis.rows[r].values[key];const m=currentAnalysis.rows[r].meta[key]||{};$('inspectLabel').textContent=`${p.number?'#'+p.number+' ':''}${p.name} • ${key==='p0'?'0 pass':key==='p1'?'1 pass':key==='p2'?'2 pass':key==='p3'?'3 pass':key} • detected ${v} (${m.vertical||0} strokes${m.slash?' + slash':''})`;$('cellInspector').classList.remove('hide')}
 function adjustInspect(delta){if(!currentInspect||!currentAnalysis)return;const {r,key}=currentInspect,inp=$('verifyBody').querySelector(`input[data-r="${r}"][data-k="${key}"]`);if(!inp)return;const v=clamp((parseInt(inp.value||'0',10)||0)+delta,0,99);inp.value=v;inp.dispatchEvent(new Event('input',{bubbles:true}));showCellInspect(r,key)}
 function cropCanvas(src,rect,scale=2){const [x0,y0,x1,y1]=rect,c=document.createElement('canvas');c.width=Math.round((x1-x0)*scale);c.height=Math.round((y1-y0)*scale);const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);ctx.drawImage(src,x0,y0,x1-x0,y1-y0,0,0,c.width,c.height);const im=ctx.getImageData(0,0,c.width,c.height),d=im.data;for(let y=0;y<c.height;y++){let dark=0;for(let x=0;x<c.width;x++){const i=(y*c.width+x)*4,g=d[i]*.299+d[i+1]*.587+d[i+2]*.114;if(g<120)dark++}if(dark>c.width*.65){for(let x=0;x<c.width;x++){const i=(y*c.width+x)*4;d[i]=d[i+1]=d[i+2]=255}}}ctx.putImageData(im,0,0);return c}
 async function getOCRWorker(){if(ocrWorker)return ocrWorker;if(!window.Tesseract)throw Error('OCR engine not loaded.');$('ocrStatus').className='status';$('ocrStatus').textContent='Starting local OCR engine…';const base=new URL('./',location.href);ocrWorker=await Tesseract.createWorker('eng',1,{workerPath:'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/6.0.1/worker.min.js',langPath:'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int',corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@6.1.2',logger:m=>{if(m.status&&m.progress!=null)$('ocrStatus').textContent=`OCR: ${m.status} ${Math.round(m.progress*100)}%`}});return ocrWorker}
 function prepOCR(src,mode='text',variant=0){
- const scale=mode==='name'?4:(mode==='hand'?3.4:3),c=document.createElement('canvas');c.width=Math.max(8,Math.round(src.width*scale));c.height=Math.max(8,Math.round(src.height*scale));const x=c.getContext('2d',{willReadFrequently:true});x.imageSmoothingEnabled=true;x.drawImage(src,0,0,c.width,c.height);const im=x.getImageData(0,0,c.width,c.height),d=im.data,vals=[];for(let i=0;i<d.length;i+=36)vals.push(d[i]*.299+d[i+1]*.587+d[i+2]*.114);const bg=median(vals),thr=clamp(bg-(mode==='hand'?variant===2?22:38:variant===2?35:52),95,218);
- for(let i=0;i<d.length;i+=4){const g=d[i]*.299+d[i+1]*.587+d[i+2]*.114;let v;if(variant===0){v=clamp((g-(bg-105))*2.15,0,255)}else if(variant===2){v=g<thr?0:255}else{v=g<clamp(thr+18,110,225)?0:255}d[i]=d[i+1]=d[i+2]=v;d[i+3]=255}x.putImageData(im,0,0);return c
+ const scale=mode==='name'?4:(mode==='hand'?3.5:3),c=document.createElement('canvas');c.width=Math.max(8,Math.round(src.width*scale));c.height=Math.max(8,Math.round(src.height*scale));const x=c.getContext('2d',{willReadFrequently:true});x.imageSmoothingEnabled=true;x.drawImage(src,0,0,c.width,c.height);const im=x.getImageData(0,0,c.width,c.height),d=im.data;
+ if(mode==='hand'){
+  let hits=0;for(let i=0;i<d.length;i+=4)if(bluePixel(d[i],d[i+1],d[i+2]))hits++;
+  if(hits>Math.max(10,(d.length/4)*.001)){
+   for(let i=0;i<d.length;i+=4){const on=bluePixel(d[i],d[i+1],d[i+2]);const v=on?0:255;d[i]=d[i+1]=d[i+2]=v;d[i+3]=255}x.putImageData(im,0,0);return c;
+  }
+ }
+ const vals=[];for(let i=0;i<d.length;i+=36)vals.push(d[i]*.299+d[i+1]*.587+d[i+2]*.114);const bg=median(vals),thr=clamp(bg-(variant===2?35:52),95,218);
+ for(let i=0;i<d.length;i+=4){const g=d[i]*.299+d[i+1]*.587+d[i+2]*.114;let v;if(variant===0)v=clamp((g-(bg-105))*2.15,0,255);else if(variant===2)v=g<thr?0:255;else v=g<clamp(thr+18,110,225)?0:255;d[i]=d[i+1]=d[i+2]=v;d[i+3]=255}x.putImageData(im,0,0);return c
 }
 function ocrQuality(text,mode){let q=String(text||'').trim();if(!q)return 0;let score=Math.min(35,q.length*2);if(mode==='name'){score+=(q.match(/[A-Za-z]{3,}/g)||[]).length*12;score-=(q.match(/[^A-Za-z0-9# .'-]/g)||[]).length*5}else if(mode==='hand'){score+=(q.match(/\d+/g)||[]).length*7}return score}
 async function ocrOne(worker,canvas,whitelist='',mode='text'){
@@ -226,7 +293,7 @@ function levenshtein(a,b){a=a.toLowerCase();b=b.toLowerCase();const d=Array(b.le
 function bestOpponent(raw){if(!raw)return'';const known=[...new Set(teamSheets().map(s=>s.opponent).filter(Boolean))];if(!known.length)return raw;let best=raw,score=1;for(const k of known){const r=levenshtein(raw,k)/Math.max(raw.length,k.length);if(r<score){score=r;best=k}}return score<=.28?best:raw}
 
 async function saveCurrentSheet(){if(!currentAnalysis)return;const date=$('sheetDate').value,opponent=$('sheetOpponent').value.trim(),setNumber=$('sheetSet').value.trim();if(!date||!opponent||!setNumber){alert('Please confirm date, opponent, and set number before saving.');return}const vals=currentAnalysis.rows.map(r=>({playerId:r.playerId,values:{...r.values},meta:r.meta}));const event=$('sheetEvent').value.trim();const record={id:editingId||uid(),teamId:activeTeam().id,teamName:activeTeam().name,date,opponent,event,setNumber,ourScore:$('ourScore').value===''?null:num($('ourScore').value),oppScore:$('oppScore').value===''?null:num($('oppScore').value),stats:vals,sourcePhoto:currentSourceBlob,processedPhoto:currentProcessedBlob,createdAt:Date.now(),updatedAt:Date.now()};await putSheet(record);sheets=await allSheets();sheets.sort(sortSheets);await learnCalibration(record);resetCapture();renderAll();showView('home');flash('Set saved locally.','good')}
-async function learnCalibration(sheet){const units=[];for(const r of sheet.stats){for(const [k,m] of Object.entries(r.meta||{})){const count=num(r.values[k]);if(count>0&&m&&num(m.ink)>8){const u=m.ink/count;if(u>=10&&u<=1000)units.push(u)}}}const med=median(units);if(Number.isFinite(med)){if(settings.markUnit)settings.markUnit=settings.markUnit*.65+med*.35;else settings.markUnit=med;settings.markSamples=(settings.markSamples||0)+units.length;await kvSet('settings',settings);renderCalibration()}}
+async function learnCalibration(sheet){settings.tallyProfile='blue-ink-strokes-v2';if(db)await kvSet('settings',settings);renderCalibration()}
 function resetCapture(){currentFile=currentSourceBlob=currentProcessedBlob=currentImage=currentAnalysis=currentWarpedCanvas=currentGrid=null;currentCorners=[];currentInspect=null;editingId=null;$('captureWork').classList.add('hide');$('cameraInput').value='';$('photoInput').value='';$('verifyBody').innerHTML='';$('verifyWrap').classList.add('hide');$('verifyEmpty').classList.remove('hide');$('saveSheetBtn').disabled=true;$('cornerDots').innerHTML='';updateOpponents()}
 
 function teamAgg(list=teamSheets()){ const a={sets:list.length,p0:0,p1:0,p2:0,p3:0,A:0,K:0,E:0,SA:0,SE:0,B:0};for(const s of list)for(const r of s.stats||[])for(const k of ['p0','p1','p2','p3','A','K','E','SA','SE','B'])a[k]+=num(r.values[k]);return {...a,...calcRow(a)}}
