@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.8';
+const APP_VERSION='2.0';
 const $=id=>document.getElementById(id);
 const GRID={W:1650,H:1275,table:[[88,111],[1555,111],[1555,982],[88,982]],xs:[88,317.5,425.5,542.5,656.5,767.5,854.5,1006.5,1096.5,1179.5,1273.5,1361,1454.5,1554.5],ys:[111.5,150.5,200.5,260.5,321.5,379.5,440.5,500.5,560.5,621.5,681.5,742.5,800.5,860.5,921.5,981.5],stats:[['p0',1],['p1',2],['p2',3],['p3',4],['A',6],['K',7],['E',8],['SA',10],['SE',11],['B',12]],headers:{date:[125,48,390,112],opponent:[515,48,875,112],setScore:[1005,42,1555,118]}};
 const DB_NAME='volleyStatsOfflineDB',DB_VER=1;let db=null,settings=null,sheets=[],currentFile=null,currentSourceBlob=null,currentProcessedBlob=null,currentImage=null,currentCorners=[],currentAnalysis=null,ocrWorker=null,editingId=null,currentRotation=0,currentWarpedCanvas=null,currentGrid=null,currentInspect=null,currentRosterOCR=null;
@@ -25,12 +25,21 @@ async function setupServiceWorker(){
  let reloading=false;
  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(reloading)return;reloading=true;location.reload()});
  try{
-  const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});
+  if('caches' in window){
+   const keys=await caches.keys();
+   await Promise.all(keys.filter(k=>/^volley-stats-v1-/.test(k)&&k!=='volley-stats-v2-0').map(k=>caches.delete(k)));
+  }
+  const reg=await navigator.serviceWorker.register('./sw.js?v=2.0',{updateViaCache:'none'});
+  if(reg.waiting)reg.waiting.postMessage({type:'SKIP_WAITING'});
+  reg.addEventListener('updatefound',()=>{
+   const w=reg.installing;
+   if(w)w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller)w.postMessage({type:'SKIP_WAITING'})});
+  });
   const check=()=>reg.update().catch(()=>{});
   await check();
   window.addEventListener('focus',check);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')check()});
-  setInterval(check,60*60*1000);
+  setInterval(check,30*60*1000);
  }catch(e){console.warn('App update check unavailable',e)}
 }
 
@@ -47,11 +56,34 @@ function migrateTeams(){if(!Array.isArray(settings.teams)||!settings.teams.lengt
 function activeTeam(){migrateTeams();return settings.teams.find(t=>t.id===settings.activeTeamId)||settings.teams[0]}
 function activateTeam(id,save=false){migrateTeams();const t=settings.teams.find(x=>x.id===id)||settings.teams[0];settings.activeTeamId=t.id;settings.teamName=t.name;settings.roster=t.roster;if(save&&db)kvSet('settings',settings).catch(()=>{});fillTeamSelects();}
 function teamSheets(list=sheets){const id=activeTeam().id;return list.filter(s=>!s.teamId||s.teamId===id)}
+function teamSheetsFor(teamId,list=sheets){return list.filter(s=>!s.teamId||s.teamId===teamId)}
+function suggestHeaderFromHistory(force=false){
+ const teamId=$('sheetTeam')?.value||activeTeam().id,date=$('sheetDate')?.value||today();
+ const same=teamSheetsFor(teamId).filter(s=>s.date===date).sort(sortSheets);
+ if(same.length){
+  const last=same[same.length-1];
+  if(force||!$('sheetOpponent').value)$('sheetOpponent').value=last.opponent||'';
+  if(force||!$('sheetEvent').value)$('sheetEvent').value=last.event||'';
+  if(force||!$('sheetSet').value){
+   const n=Math.max(...same.map(s=>num(s.setNumber)),0)+1;
+   $('sheetSet').value=String(n);
+  }
+  $('manualHeaderStatus').textContent=`Found ${same.length} saved set${same.length===1?'':'s'} for this team/date. Opponent/event were reused and the next set was suggested.`;
+  $('manualHeaderStatus').className='status good';
+ }else{
+  if(force){$('sheetOpponent').value='';$('sheetEvent').value='';$('sheetSet').value='1'}
+  else if(!$('sheetSet').value)$('sheetSet').value='1';
+  $('manualHeaderStatus').textContent='No earlier set found for this team/date. Enter the opponent; the app will remember it for later sets.';
+  $('manualHeaderStatus').className='status';
+ }
+ updateOpponents();updateEvents();
+}
+
 async function init(){
  bind(); // Wire navigation and photo controls immediately; do not wait for iPhone storage.
- settings=defaultSettings();migrateTeams();sheets=[];fillSetup();renderAll();$('sheetDate').value=today();
+ settings=defaultSettings();migrateTeams();sheets=[];fillSetup();renderAll();$('sheetDate').value=today();suggestHeaderFromHistory();
  try{
-   await openDB();settings=await kvGet('settings')||settings;migrateTeams();await kvSet('settings',settings);sheets=(await allSheets()).sort(sortSheets);fillSetup();renderAll();
+   await openDB();settings=await kvGet('settings')||settings;migrateTeams();await kvSet('settings',settings);sheets=(await allSheets()).sort(sortSheets);fillSetup();renderAll();suggestHeaderFromHistory();
  }catch(e){
    console.error('Local storage unavailable',e);flash('Storage did not start yet — photo capture still works. Reopen the installed app before saving.','warn');
  }
@@ -66,10 +98,12 @@ function bind(){
  $('cameraInput').addEventListener('change',e=>loadPhoto(e.target.files[0]));$('photoInput').addEventListener('change',e=>loadPhoto(e.target.files[0]));
  $('alignCanvas').addEventListener('pointerup',addCorner);$('resetCorners').addEventListener('click',resetCorners);$('rotateLeft').addEventListener('click',()=>rotateSource(-90));$('rotateRight').addEventListener('click',()=>rotateSource(90));$('analyzeBtn').addEventListener('click',analyzeCurrent);$('inspectMinus').addEventListener('click',()=>adjustInspect(-1));$('inspectPlus').addEventListener('click',()=>adjustInspect(1));
  $('saveSheetBtn').addEventListener('click',saveCurrentSheet);$('cancelCapture').addEventListener('click',resetCapture);
- $('saveSeason').addEventListener('click',saveSetup);$('saveRoster').addEventListener('click',saveRoster);$('teamEditorSelect').addEventListener('change',e=>{activateTeam(e.target.value);fillSetup();renderAll()});$('sheetTeam').addEventListener('change',e=>{activateTeam(e.target.value);if(currentWarpedCanvas){currentAnalysis=analyzeTallies(currentWarpedCanvas);renderVerify()}renderAll()});$('globalTeamSelect').addEventListener('change',e=>{activateTeam(e.target.value,true);fillSetup();renderAll()});$('addPlayer').addEventListener('click',()=>{settings.roster.push({id:uid(),number:'',name:'New player'});renderRosterEditor()});
+ $('saveSeason').addEventListener('click',saveSetup);$('saveRoster').addEventListener('click',saveRoster);$('teamEditorSelect').addEventListener('change',e=>{activateTeam(e.target.value);fillSetup();renderAll()});$('sheetTeam').addEventListener('change',e=>{activateTeam(e.target.value);suggestHeaderFromHistory(true);if(currentWarpedCanvas){currentAnalysis=analyzeTallies(currentWarpedCanvas);renderVerify()}renderAll()});$('globalTeamSelect').addEventListener('change',e=>{activateTeam(e.target.value,true);fillSetup();renderAll()});$('addPlayer').addEventListener('click',()=>{settings.roster.push({id:uid(),number:'',name:'New player'});renderRosterEditor()});
  $('playerSelect').addEventListener('change',renderPlayerView);['exploreScope','explorePlayer','exploreOpponent','exploreEvent','exploreFrom','exploreTo'].forEach(id=>$(id).addEventListener('change',renderExplore));$('clearExplore').addEventListener('click',clearExploreFilters);$('closeModal').addEventListener('click',()=>$('sheetModal').classList.remove('open'));
  $('exportCSV').addEventListener('click',exportCSV);$('exportExcel').addEventListener('click',exportExcel);$('exportArchive').addEventListener('click',exportArchive);$('importArchive').addEventListener('change',e=>importArchive(e.target.files[0]));
  $('resetCalibration').addEventListener('click',async()=>{settings.markUnit=null;settings.markSamples=0;await kvSet('settings',settings);renderCalibration()});
+ $('sheetDate').addEventListener('change',()=>suggestHeaderFromHistory(true));
+ $('useRecentHeader').addEventListener('click',()=>suggestHeaderFromHistory(true));
 }
 function showView(v){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===v));document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('active',x.dataset.view===v));if(v==='players')renderPlayerView();if(v==='matches')renderExplore();if(v==='home')renderHome();window.scrollTo(0,0)}
 
@@ -82,7 +116,7 @@ async function saveSetup(){settings.seasonName=$('seasonName').value.trim()||'Vo
 function renderCalibration(){$('calibrationInfo').textContent='v1.8 uses blue-ink stroke recognition. Black/grey grid lines and printed text are ignored before tally counting; verified corrections are still saved with each sheet.'}
 function flash(msg,type=''){$('seasonSub').textContent=msg;setTimeout(()=>$('seasonSub').textContent='Private • offline season tracker',2600)}
 
-async function loadPhoto(file){if(!file)return;editingId=null;currentFile=file;currentCorners=[];currentAnalysis=null;currentProcessedBlob=null;currentWarpedCanvas=null;currentGrid=null;currentInspect=null;$('captureWork').classList.remove('hide');showView('capture');$('verifyWrap').classList.add('hide');$('verifyEmpty').classList.remove('hide');$('cellInspector').classList.add('hide');$('saveSheetBtn').disabled=true;$('ocrStatus').textContent='Header OCR will run after alignment.';$('sheetDate').value=today();$('sheetOpponent').value='';$('sheetEvent').value='';$('sheetSet').value='';$('ourScore').value='';$('oppScore').value='';
+async function loadPhoto(file){if(!file)return;editingId=null;currentFile=file;currentCorners=[];currentAnalysis=null;currentProcessedBlob=null;currentWarpedCanvas=null;currentGrid=null;currentInspect=null;$('captureWork').classList.remove('hide');showView('capture');$('verifyWrap').classList.add('hide');$('verifyEmpty').classList.remove('hide');$('cellInspector').classList.add('hide');$('saveSheetBtn').disabled=true;$('ocrStatus').textContent='Roster OCR is only used to suggest which saved team this sheet belongs to.';$('sheetDate').value=today();$('sheetOpponent').value='';$('sheetEvent').value='';$('sheetSet').value='';$('ourScore').value='';$('oppScore').value='';suggestHeaderFromHistory(true);
  const img=await fileToImage(file);currentImage=img;currentSourceBlob=file;currentRotation=(img.naturalHeight>img.naturalWidth*1.08)?270:0;drawSourceImage();const ok=autoDetectCorners();$('alignStatus').textContent=(currentRotation?'Photo auto-rotated. ':'')+(ok?'Sheet detected from the page/template. Check the four dots, then Analyze sheet.':'I could not confidently find the table. Set the four corners manually.');drawCorners();}
 function drawSourceImage(){if(!currentImage)return;const c=$('alignCanvas'),img=currentImage,rot=((currentRotation%360)+360)%360,max=2000,sw=img.naturalWidth,sh=img.naturalHeight,rw=(rot===90||rot===270)?sh:sw,rh=(rot===90||rot===270)?sw:sh,scale=Math.min(1,max/Math.max(rw,rh));c.width=Math.round(rw*scale);c.height=Math.round(rh*scale);const ctx=c.getContext('2d',{willReadFrequently:true});ctx.save();if(rot===90){ctx.translate(c.width,0);ctx.rotate(Math.PI/2)}else if(rot===180){ctx.translate(c.width,c.height);ctx.rotate(Math.PI)}else if(rot===270){ctx.translate(0,c.height);ctx.rotate(-Math.PI/2)}ctx.drawImage(img,0,0,Math.round(sw*scale),Math.round(sh*scale));ctx.restore();}
 function rotateSource(delta){if(!currentImage)return;currentRotation=(currentRotation+delta+360)%360;currentCorners=[];currentAnalysis=null;currentWarpedCanvas=null;currentGrid=null;drawSourceImage();$('alignStatus').className='status';const ok=autoDetectCorners();$('alignStatus').textContent=ok?'Rotation changed and table corners re-detected.':'Rotation changed. Set the four table corners manually.';drawCorners();}
@@ -137,7 +171,7 @@ function solveLinear(A,b){const n=b.length,M=A.map((r,i)=>r.slice().concat(b[i])
 function homography(from,to){const A=[],b=[];for(let i=0;i<4;i++){const [x,y]=from[i],[u,v]=to[i];A.push([x,y,1,0,0,0,-u*x,-u*y]);b.push(u);A.push([0,0,0,x,y,1,-v*x,-v*y]);b.push(v)}const h=solveLinear(A,b);return [...h,1]}
 function warpCanvas(srcCanvas,srcPts){const out=document.createElement('canvas');out.width=GRID.W;out.height=GRID.H;const sctx=srcCanvas.getContext('2d',{willReadFrequently:true}),s=sctx.getImageData(0,0,srcCanvas.width,srcCanvas.height),octx=out.getContext('2d'),o=octx.createImageData(out.width,out.height);const dst=GRID.table,H=homography(dst,srcPts.map(p=>[p.x,p.y]));const sd=s.data,od=o.data,sw=srcCanvas.width,sh=srcCanvas.height,W=out.width,Hh=out.height;for(let y=0;y<Hh;y++){for(let x=0;x<W;x++){const z=H[6]*x+H[7]*y+H[8],sx=(H[0]*x+H[1]*y+H[2])/z,sy=(H[3]*x+H[4]*y+H[5])/z,di=(y*W+x)*4;if(sx>=0&&sy>=0&&sx<sw-1&&sy<sh-1){const ix=Math.round(sx),iy=Math.round(sy),si=(iy*sw+ix)*4;od[di]=sd[si];od[di+1]=sd[si+1];od[di+2]=sd[si+2];od[di+3]=255}else{od[di]=od[di+1]=od[di+2]=255;od[di+3]=255}}}octx.putImageData(o,0,0);return out}
 
-async function analyzeCurrent(){if(currentCorners.length!==4)return;$('analyzeBtn').disabled=true;$('alignStatus').textContent='Straightening the sheet…';await nextFrame();try{const warped=warpCanvas($('alignCanvas'),currentCorners);currentWarpedCanvas=warped;currentGrid=GRID;currentProcessedBlob=await canvasBlob(warped,.86);$('alignStatus').textContent='Aligned. Reading roster to identify the team…';await nextFrame();try{await detectTeamFromRoster(warped)}catch(e){console.warn('Team OCR unavailable',e)}$('alignStatus').textContent='Isolating blue pen and counting tally strokes…';currentAnalysis=analyzeTallies(warped);renderVerify();$('verifyEmpty').classList.add('hide');$('verifyWrap').classList.remove('hide');$('saveSheetBtn').disabled=false;runHeaderOCR(warped).catch(e=>{$('ocrStatus').className='status warn';$('ocrStatus').textContent='OCR could not read every header field. Verify the highlighted information manually.';console.warn(e)});$('alignStatus').className='status good';$('alignStatus').textContent=`Blue-ink analysis complete. ${currentAnalysis.uncertain} cells are flagged for a quick check.`}catch(e){$('alignStatus').className='status bad';$('alignStatus').textContent=e.message||String(e)}finally{$('analyzeBtn').disabled=false}}
+async function analyzeCurrent(){if(currentCorners.length!==4)return;$('analyzeBtn').disabled=true;$('alignStatus').textContent='Straightening the sheet…';await nextFrame();try{const warped=warpCanvas($('alignCanvas'),currentCorners);currentWarpedCanvas=warped;currentGrid=GRID;currentProcessedBlob=await canvasBlob(warped,.86);$('alignStatus').textContent='Aligned. Checking the printed roster for a team match…';await nextFrame();try{const tm=await detectTeamFromRoster(warped);if(tm&&tm.team)suggestHeaderFromHistory(false)}catch(e){console.warn('Team OCR unavailable',e);$('ocrStatus').className='status warn';$('ocrStatus').textContent='Could not confidently identify the roster. Choose the team manually.'}$('alignStatus').textContent='Isolating blue pen and counting tally strokes…';currentAnalysis=analyzeTallies(warped);renderVerify();$('verifyEmpty').classList.add('hide');$('verifyWrap').classList.remove('hide');$('saveSheetBtn').disabled=false;$('alignStatus').className='status good';$('alignStatus').textContent=`Blue-ink analysis complete. ${currentAnalysis.uncertain} cells are flagged for a quick check.`}catch(e){$('alignStatus').className='status bad';$('alignStatus').textContent=e.message||String(e)}finally{$('analyzeBtn').disabled=false}}
 function nextFrame(){return new Promise(r=>requestAnimationFrame(()=>setTimeout(r,10)))}
 function canvasBlob(c,q=.85){return new Promise(r=>c.toBlob(r,'image/jpeg',q))}
 
@@ -150,47 +184,83 @@ function bluePixel(r,g,b){
 }
 function groupsFromArray(flags,gap=1){const out=[];let i=0;while(i<flags.length){if(!flags[i]){i++;continue}let a=i,last=i,miss=0;i++;while(i<flags.length){if(flags[i]){last=i;miss=0;i++;continue}miss++;if(miss>gap)break;i++}out.push([a,last]);}return out}
 function blueCellInfo(ctx,x0,x1,y0,y1){
- const padX=Math.max(7,Math.round((x1-x0)*.09)),padY=Math.max(6,Math.round((y1-y0)*.12));
- const x=Math.round(x0+padX),y=Math.round(y0+padY),w=Math.max(8,Math.round(x1-x0-2*padX)),h=Math.max(8,Math.round(y1-y0-2*padY));
- const im=ctx.getImageData(x,y,w,h),d=im.data,mask=new Uint8Array(w*h),xc=new Uint16Array(w),yc=new Uint16Array(h);
+ const padX=Math.max(8,Math.round((x1-x0)*.10)),padY=Math.max(7,Math.round((y1-y0)*.14));
+ const x=Math.round(x0+padX),y=Math.round(y0+padY),w=Math.max(10,Math.round(x1-x0-2*padX)),h=Math.max(10,Math.round(y1-y0-2*padY));
+ const im=ctx.getImageData(x,y,w,h),d=im.data,raw=new Uint8Array(w*h);
  let blue=0;
- for(let p=0,i=0;p<mask.length;p++,i+=4){if(bluePixel(d[i],d[i+1],d[i+2])){mask[p]=1;blue++;xc[p%w]++;yc[(p/w)|0]++}}
- // Absolutely blank cells should stay zero. This is deliberately conservative.
- const blankFloor=Math.max(7,Math.round(w*h*.0018));
- if(blue<blankFloor)return {x,y,w,h,blue,vertical:0,slash:0,count:0,low:false,mask};
- // Vertical tally strokes create columns with blue pixels through a meaningful part of cell height.
- const colThreshold=Math.max(3,Math.round(h*.11));
- const vf=Array.from(xc,v=>v>=colThreshold);
- let vg=groupsFromArray(vf,1).filter(([a,b])=>{const ww=b-a+1;return ww<=Math.max(10,w*.15)});
- // Merge groups separated only by a one/two-pixel ragged edge, but keep real adjacent strokes distinct.
- const centers=vg.map(([a,b])=>(a+b)/2);
- // Remove pixels near detected vertical strokes. A fifth/slash mark remains as a broad diagonal residue.
- const residual=new Uint8Array(mask.length);let residualCount=0,minx=w,miny=h,maxx=-1,maxy=-1;
+ for(let p=0,i=0;p<raw.length;p++,i+=4){if(bluePixel(d[i],d[i+1],d[i+2])){raw[p]=1;blue++}}
+
+ // Most cells on a stat sheet are empty. Noise is therefore presumed to be zero
+ // unless we can find the geometry of an actual pen stroke.
+ const absoluteNoise=Math.max(10,Math.round(w*h*.0025));
+ if(blue<absoluteNoise)return {x,y,w,h,blue,vertical:0,slash:0,count:0,low:false,mask:raw,density:blue/(w*h),evidence:'blank'};
+
+ // Remove tiny isolated blue flecks (JPEG colour noise, paper shadows, antialiasing).
+ // Keep only pixels that have at least one neighbour in a 3x3 box, then bridge a
+ // one-pixel break along the direction of a pen stroke.
+ const mask=new Uint8Array(raw.length);
+ for(let yy=1;yy<h-1;yy++)for(let xx=1;xx<w-1;xx++){
+  const p=yy*w+xx;if(!raw[p])continue;let n=0;
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if(dx||dy)n+=raw[(yy+dy)*w+xx+dx];
+  if(n>=1)mask[p]=1;
+ }
+ const cleanBlue=mask.reduce((a,b)=>a+b,0);
+ if(cleanBlue<absoluteNoise)return {x,y,w,h,blue:cleanBlue,vertical:0,slash:0,count:0,low:false,mask,density:cleanBlue/(w*h),evidence:'blank'};
+
+ // Column support: an actual tally has blue ink extending through a meaningful
+ // fraction of the cell height. Random dots and coloured JPEG fringes do not.
+ const xc=new Float32Array(w);
+ for(let yy=0;yy<h;yy++)for(let xx=0;xx<w;xx++)if(mask[yy*w+xx])xc[xx]++;
+ const smooth=new Float32Array(w);
+ for(let xx=0;xx<w;xx++){let s=0,n=0;for(let k=-2;k<=2;k++){const q=xx+k;if(q>=0&&q<w){s+=xc[q];n++}}smooth[xx]=s/n}
+ const supportThreshold=Math.max(3.2,h*.13);
+ const candidates=[];
+ for(let xx=1;xx<w-1;xx++)if(smooth[xx]>=supportThreshold&&smooth[xx]>=smooth[xx-1]&&smooth[xx]>=smooth[xx+1])candidates.push({x:xx,v:smooth[xx]});
+ candidates.sort((a,b)=>b.v-a.v);
+ const minSep=Math.max(4,Math.round(w*.045)),centers=[];
+ for(const c of candidates){if(centers.every(q=>Math.abs(q-c.x)>=minSep))centers.push(c.x)}
+ centers.sort((a,b)=>a-b);
+
+ // Verify each projected stroke locally: it must occupy several different y bands,
+ // rather than merely being one wide dot or a bit of coloured edge noise.
+ const verified=[];
+ for(const cx of centers){let bands=0;const bandN=5;
+  for(let b=0;b<bandN;b++){const ya=Math.floor(b*h/bandN),yb=Math.floor((b+1)*h/bandN);let hit=0;
+   for(let yy=ya;yy<yb;yy++)for(let xx=Math.max(0,cx-2);xx<=Math.min(w-1,cx+2);xx++)hit+=mask[yy*w+xx];
+   if(hit>=2)bands++;
+  }
+  if(bands>=2)verified.push(cx);
+ }
+
+ // Remove the narrow vertical tally strokes and inspect what remains for a diagonal
+ // fifth stroke. This accommodates BOTH conventions: |||||||| = 8, and ||||/||| = 8.
+ const residual=new Uint8Array(mask.length);let residualCount=0;
+ const nearRadius=Math.max(2,Math.round(w*.025));
  for(let yy=0;yy<h;yy++)for(let xx=0;xx<w;xx++){
-   const p=yy*w+xx;if(!mask[p])continue;
-   let near=false;for(const c of centers)if(Math.abs(xx-c)<=Math.max(2,Math.round(w*.025))){near=true;break}
-   if(!near){residual[p]=1;residualCount++;minx=Math.min(minx,xx);maxx=Math.max(maxx,xx);miny=Math.min(miny,yy);maxy=Math.max(maxy,yy)}
+  const p=yy*w+xx;if(!mask[p])continue;
+  let near=false;for(const c of verified)if(Math.abs(xx-c)<=nearRadius){near=true;break}
+  if(!near){residual[p]=1;residualCount++}
  }
- let slash=0;
- if(residualCount>=Math.max(7,Math.round(blue*.10))&&maxx>=minx){
-   const bw=maxx-minx+1,bh=maxy-miny+1;
-   // A cross/fifth mark is broad in x and has meaningful y movement; dots/noise are not.
-   if(bw>=w*.20 && bh>=h*.16){
-     // Regression correlation distinguishes a diagonal stroke from scattered residue.
-     let n=0,sx=0,sy=0,sxx=0,syy=0,sxy=0;
-     for(let yy=0;yy<h;yy++)for(let xx=0;xx<w;xx++)if(residual[yy*w+xx]){n++;sx+=xx;sy+=yy;sxx+=xx*xx;syy+=yy*yy;sxy+=xx*yy}
-     const cov=n*sxy-sx*sy,dx=n*sxx-sx*sx,dy=n*syy-sy*sy;
-     const corr=(dx>0&&dy>0)?Math.abs(cov/Math.sqrt(dx*dy)):0;
-     if(corr>=.28)slash=1;
-   }
+ let slash=0,slashConfidence=0;
+ if(residualCount>=Math.max(8,Math.round(cleanBlue*.08))){
+  // Fit a line to residual pixels and require clear diagonal direction and span.
+  let n=0,sx=0,sy=0,sxx=0,syy=0,sxy=0,minx=w,maxx=-1,miny=h,maxy=-1;
+  for(let yy=0;yy<h;yy++)for(let xx=0;xx<w;xx++)if(residual[yy*w+xx]){n++;sx+=xx;sy+=yy;sxx+=xx*xx;syy+=yy*yy;sxy+=xx*yy;minx=Math.min(minx,xx);maxx=Math.max(maxx,xx);miny=Math.min(miny,yy);maxy=Math.max(maxy,yy)}
+  if(n>=8){const cov=n*sxy-sx*sy,dx=n*sxx-sx*sx,dy=n*syy-sy*sy,corr=(dx>0&&dy>0)?Math.abs(cov/Math.sqrt(dx*dy)):0,bw=maxx-minx+1,bh=maxy-miny+1;
+   // Count how many verified vertical tallies lie inside the slash's horizontal span.
+   const crossed=verified.filter(c=>c>=minx-nearRadius&&c<=maxx+nearRadius).length;
+   if(corr>=.40&&bw>=w*.16&&bh>=h*.18&&crossed>=3){slash=1;slashConfidence=corr}
+  }
  }
- let count=centers.length+slash;
- // If colour exists but projection missed a tiny handwritten stroke, treat one compact component as one tally.
- if(count===0&&blue>=blankFloor*1.5)count=1;
+
+ // Crucial bias: no qualifying stroke means EMPTY, even if a handful of blue pixels exist.
+ // We never manufacture a 1 merely because some colour survived the mask.
+ let count=verified.length+slash;
+ if(verified.length===0&&slash===0)count=0;
  count=clamp(count,0,40);
- const density=blue/(w*h);
- const low=(blue>0&&count===0)||density>.20||count>15|| (slash&&centers.length<3);
- return {x,y,w,h,blue,vertical:centers.length,slash,count,low,mask,density};
+ const density=cleanBlue/(w*h);
+ const low=(count===0&&cleanBlue>absoluteNoise*3) || count>18 || density>.23 || (slash&&verified.length<3) || (count>0&&verified.length===0);
+ return {x,y,w,h,blue:cleanBlue,vertical:verified.length,slash,count,low,mask,density,slashConfidence,evidence:count?'stroke':'blank'};
 }
 function analyzeTallies(canvas){
  const ctx=canvas.getContext('2d',{willReadFrequently:true}),rows=settings.roster.slice(0,12).map(p=>({playerId:p.id,values:{p0:0,p1:0,p2:0,p3:0,A:0,K:0,E:0,SA:0,SE:0,B:0},meta:{}}));
@@ -202,7 +272,7 @@ function analyzeTallies(canvas){
    rows[r].values[key]=c.count;rows[r].meta[key]={ink:c.blue,blue:c.blue,vertical:c.vertical,slash:c.slash,auto:c.count,low:c.low,density:c.density||0};
   }
  }
- return {rows,unitUsed:null,uncertain,blueCells,method:'blue-ink-strokes-v2'};
+ return {rows,unitUsed:null,uncertain,blueCells,method:'blue-ink-strokes-v3-empty-first-mixed-tallies'};
 }
 function calcRow(v){const rec=v.p0+v.p1+v.p2+v.p3,pass=rec?((v.p1+2*v.p2+3*v.p3)/rec):NaN,hit=v.A?((v.K-v.E)/v.A):NaN;return {rec,pass,hit,kill:v.A?v.K/v.A:NaN,error:v.A?v.E/v.A:NaN}}
 function renderVerify(){const body=$('verifyBody');body.innerHTML='';if(!currentAnalysis)return;currentAnalysis.rows.forEach((row,i)=>{const p=settings.roster.find(x=>x.id===row.playerId)||{name:'Player '+(i+1),number:''},c=calcRow(row.values),tr=document.createElement('tr');const input=k=>`<input inputmode="numeric" type="number" min="0" max="99" data-r="${i}" data-k="${k}" value="${row.values[k]}" class="${row.meta[k]?.low?'uncertain':''}">`;tr.innerHTML=`<td>${esc((p.number?'#'+p.number+' ':'')+p.name)}</td><td>${input('p0')}</td><td>${input('p1')}</td><td>${input('p2')}</td><td>${input('p3')}</td><td class="calc" data-calc="pass-${i}">${fmt(c.pass,2)}</td><td>${input('A')}</td><td>${input('K')}</td><td>${input('E')}</td><td class="calc" data-calc="hit-${i}">${Number.isFinite(c.hit)?c.hit.toFixed(3):'—'}</td><td>${input('SA')}</td><td>${input('SE')}</td><td>${input('B')}</td>`;body.appendChild(tr)});body.querySelectorAll('input').forEach(inp=>inp.addEventListener('input',e=>{const r=+e.target.dataset.r,k=e.target.dataset.k;currentAnalysis.rows[r].values[k]=clamp(parseInt(e.target.value||'0',10)||0,0,99);e.target.classList.remove('uncertain');currentAnalysis.rows[r].meta[k].low=false;const c=calcRow(currentAnalysis.rows[r].values);body.querySelector(`[data-calc="pass-${r}"]`).textContent=fmt(c.pass,2);body.querySelector(`[data-calc="hit-${r}"]`).textContent=Number.isFinite(c.hit)?c.hit.toFixed(3):'—'}));body.querySelectorAll('input').forEach(inp=>{inp.addEventListener('focus',()=>showCellInspect(+inp.dataset.r,inp.dataset.k));inp.addEventListener('click',()=>showCellInspect(+inp.dataset.r,inp.dataset.k))})}
@@ -278,7 +348,7 @@ async function detectTeamFromRoster(warped){
  console.log('Roster OCR',currentRosterOCR);
  if(bestHits>=2){
   activateTeam(bestTeam.id,true);$('sheetTeam').value=bestTeam.id;
-  $('ocrStatus').textContent=`Roster matched ${bestTeam.name} (${bestHits} row matches). Reading header…`;
+  $('ocrStatus').textContent=`Roster suggests ${bestTeam.name} (${bestHits} row matches). Confirm the team and enter the match details below.`;
   return {team:bestTeam,hits:bestHits,reads};
  }
  $('sheetTeam').value=activeTeam().id;
@@ -294,7 +364,7 @@ function bestOpponent(raw){if(!raw)return'';const known=[...new Set(teamSheets()
 
 async function saveCurrentSheet(){if(!currentAnalysis)return;const date=$('sheetDate').value,opponent=$('sheetOpponent').value.trim(),setNumber=$('sheetSet').value.trim();if(!date||!opponent||!setNumber){alert('Please confirm date, opponent, and set number before saving.');return}const vals=currentAnalysis.rows.map(r=>({playerId:r.playerId,values:{...r.values},meta:r.meta}));const event=$('sheetEvent').value.trim();const record={id:editingId||uid(),teamId:activeTeam().id,teamName:activeTeam().name,date,opponent,event,setNumber,ourScore:$('ourScore').value===''?null:num($('ourScore').value),oppScore:$('oppScore').value===''?null:num($('oppScore').value),stats:vals,sourcePhoto:currentSourceBlob,processedPhoto:currentProcessedBlob,createdAt:Date.now(),updatedAt:Date.now()};await putSheet(record);sheets=await allSheets();sheets.sort(sortSheets);await learnCalibration(record);resetCapture();renderAll();showView('home');flash('Set saved locally.','good')}
 async function learnCalibration(sheet){settings.tallyProfile='blue-ink-strokes-v2';if(db)await kvSet('settings',settings);renderCalibration()}
-function resetCapture(){currentFile=currentSourceBlob=currentProcessedBlob=currentImage=currentAnalysis=currentWarpedCanvas=currentGrid=null;currentCorners=[];currentInspect=null;editingId=null;$('captureWork').classList.add('hide');$('cameraInput').value='';$('photoInput').value='';$('verifyBody').innerHTML='';$('verifyWrap').classList.add('hide');$('verifyEmpty').classList.remove('hide');$('saveSheetBtn').disabled=true;$('cornerDots').innerHTML='';updateOpponents()}
+function resetCapture(){currentFile=currentSourceBlob=currentProcessedBlob=currentImage=currentAnalysis=currentWarpedCanvas=currentGrid=null;currentCorners=[];currentInspect=null;editingId=null;$('captureWork').classList.add('hide');$('cameraInput').value='';$('photoInput').value='';$('verifyBody').innerHTML='';$('verifyWrap').classList.add('hide');$('verifyEmpty').classList.remove('hide');$('saveSheetBtn').disabled=true;$('cornerDots').innerHTML='';updateOpponents();suggestHeaderFromHistory(false)}
 
 function teamAgg(list=teamSheets()){ const a={sets:list.length,p0:0,p1:0,p2:0,p3:0,A:0,K:0,E:0,SA:0,SE:0,B:0};for(const s of list)for(const r of s.stats||[])for(const k of ['p0','p1','p2','p3','A','K','E','SA','SE','B'])a[k]+=num(r.values[k]);return {...a,...calcRow(a)}}
 function playerAgg(pid,list=teamSheets()){ const a={sets:0,p0:0,p1:0,p2:0,p3:0,A:0,K:0,E:0,SA:0,SE:0,B:0};for(const s of list){const r=(s.stats||[]).find(x=>x.playerId===pid);if(!r)continue;const played=Object.values(r.values).some(v=>num(v)>0);if(played)a.sets++;for(const k of ['p0','p1','p2','p3','A','K','E','SA','SE','B'])a[k]+=num(r.values[k])}return {...a,...calcRow(a)}}
