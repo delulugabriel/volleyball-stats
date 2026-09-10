@@ -1,8 +1,8 @@
 'use strict';
-const APP_VERSION='1.6';
+const APP_VERSION='1.7';
 const $=id=>document.getElementById(id);
 const GRID={W:1650,H:1275,table:[[88,111],[1555,111],[1555,982],[88,982]],xs:[88,317.5,425.5,542.5,656.5,767.5,854.5,1006.5,1096.5,1179.5,1273.5,1361,1454.5,1554.5],ys:[111.5,150.5,200.5,260.5,321.5,379.5,440.5,500.5,560.5,621.5,681.5,742.5,800.5,860.5,921.5,981.5],stats:[['p0',1],['p1',2],['p2',3],['p3',4],['A',6],['K',7],['E',8],['SA',10],['SE',11],['B',12]],headers:{date:[125,48,390,112],opponent:[515,48,875,112],setScore:[1005,42,1555,118]}};
-const DB_NAME='volleyStatsOfflineDB',DB_VER=1;let db=null,settings=null,sheets=[],currentFile=null,currentSourceBlob=null,currentProcessedBlob=null,currentImage=null,currentCorners=[],currentAnalysis=null,ocrWorker=null,editingId=null,currentRotation=0,currentWarpedCanvas=null,currentGrid=null,currentInspect=null;
+const DB_NAME='volleyStatsOfflineDB',DB_VER=1;let db=null,settings=null,sheets=[],currentFile=null,currentSourceBlob=null,currentProcessedBlob=null,currentImage=null,currentCorners=[],currentAnalysis=null,ocrWorker=null,editingId=null,currentRotation=0,currentWarpedCanvas=null,currentGrid=null,currentInspect=null,currentRosterOCR=null;
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
 function clamp(x,a,b){return Math.max(a,Math.min(b,x))}
@@ -83,14 +83,37 @@ function renderCalibration(){$('calibrationInfo').textContent=settings.markUnit?
 function flash(msg,type=''){$('seasonSub').textContent=msg;setTimeout(()=>$('seasonSub').textContent='Private • offline season tracker',2600)}
 
 async function loadPhoto(file){if(!file)return;editingId=null;currentFile=file;currentCorners=[];currentAnalysis=null;currentProcessedBlob=null;currentWarpedCanvas=null;currentGrid=null;currentInspect=null;$('captureWork').classList.remove('hide');showView('capture');$('verifyWrap').classList.add('hide');$('verifyEmpty').classList.remove('hide');$('cellInspector').classList.add('hide');$('saveSheetBtn').disabled=true;$('ocrStatus').textContent='Header OCR will run after alignment.';$('sheetDate').value=today();$('sheetOpponent').value='';$('sheetEvent').value='';$('sheetSet').value='';$('ourScore').value='';$('oppScore').value='';
- const img=await fileToImage(file);currentImage=img;currentSourceBlob=file;currentRotation=(img.naturalHeight>img.naturalWidth*1.08)?270:0;drawSourceImage();const ok=autoDetectCorners();$('alignStatus').textContent=(currentRotation?'Photo auto-rotated. ':'')+(ok?'Table corners detected automatically. Check the four dots, then Analyze sheet.':'I could not confidently find the table. Set the four corners manually.');drawCorners();}
+ const img=await fileToImage(file);currentImage=img;currentSourceBlob=file;currentRotation=(img.naturalHeight>img.naturalWidth*1.08)?270:0;drawSourceImage();const ok=autoDetectCorners();$('alignStatus').textContent=(currentRotation?'Photo auto-rotated. ':'')+(ok?'Sheet detected from the page/template. Check the four dots, then Analyze sheet.':'I could not confidently find the table. Set the four corners manually.');drawCorners();}
 function drawSourceImage(){if(!currentImage)return;const c=$('alignCanvas'),img=currentImage,rot=((currentRotation%360)+360)%360,max=2000,sw=img.naturalWidth,sh=img.naturalHeight,rw=(rot===90||rot===270)?sh:sw,rh=(rot===90||rot===270)?sw:sh,scale=Math.min(1,max/Math.max(rw,rh));c.width=Math.round(rw*scale);c.height=Math.round(rh*scale);const ctx=c.getContext('2d',{willReadFrequently:true});ctx.save();if(rot===90){ctx.translate(c.width,0);ctx.rotate(Math.PI/2)}else if(rot===180){ctx.translate(c.width,c.height);ctx.rotate(Math.PI)}else if(rot===270){ctx.translate(0,c.height);ctx.rotate(-Math.PI/2)}ctx.drawImage(img,0,0,Math.round(sw*scale),Math.round(sh*scale));ctx.restore();}
 function rotateSource(delta){if(!currentImage)return;currentRotation=(currentRotation+delta+360)%360;currentCorners=[];currentAnalysis=null;currentWarpedCanvas=null;currentGrid=null;drawSourceImage();$('alignStatus').className='status';const ok=autoDetectCorners();$('alignStatus').textContent=ok?'Rotation changed and table corners re-detected.':'Rotation changed. Set the four table corners manually.';drawCorners();}
 function fileToImage(file){return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{URL.revokeObjectURL(u);res(im)};im.onerror=rej;im.src=u})}
 function addCorner(e){if(!currentImage||currentCorners.length>=4)return;const c=e.currentTarget,r=c.getBoundingClientRect();currentCorners.push({x:(e.clientX-r.left)*c.width/r.width,y:(e.clientY-r.top)*c.height/r.height});const labels=['top-right','bottom-right','bottom-left'];$('alignStatus').textContent=currentCorners.length<4?`Now tap the ${labels[currentCorners.length-1]} corner of the table.`:'Four corners set. Analyze when ready.';$('analyzeBtn').disabled=currentCorners.length!==4;drawCorners()}
 function resetCorners(){currentCorners=[];$('analyzeBtn').disabled=true;$('alignStatus').textContent='Tap top-left corner of the main stats table.';drawCorners()}
 function drawCorners(){const host=$('cornerDots'),c=$('alignCanvas');host.innerHTML='';const r=c.getBoundingClientRect();currentCorners.forEach((p,i)=>{const d=document.createElement('div');d.className='corner-dot';d.style.left=(p.x/c.width*100)+'%';d.style.top=(p.y/c.height*100)+'%';d.title=String(i+1);host.appendChild(d)})}
+function quadArea(q){let a=0;for(let i=0;i<4;i++){const p=q[i],n=q[(i+1)%4];a+=p.x*n.y-n.x*p.y}return Math.abs(a)/2}
+function projectHomography(H,x,y){const z=H[6]*x+H[7]*y+H[8];return {x:(H[0]*x+H[1]*y+H[2])/z,y:(H[3]*x+H[4]*y+H[5])/z}}
+function detectPaperQuad(){
+ const c=$('alignCanvas');if(!c.width||!c.height)return null;
+ const target=Math.min(720,c.width),scale=target/c.width,w=Math.max(100,Math.round(c.width*scale)),h=Math.max(80,Math.round(c.height*scale));
+ const t=document.createElement('canvas');t.width=w;t.height=h;const x=t.getContext('2d',{willReadFrequently:true});x.drawImage(c,0,0,w,h);const d=x.getImageData(0,0,w,h).data;
+ const lum=new Uint8Array(w*h),sat=new Uint8Array(w*h),sample=[];for(let i=0,p=0;i<d.length;i+=4,p++){const r=d[i],g=d[i+1],b=d[i+2],mx=Math.max(r,g,b),mn=Math.min(r,g,b),L=Math.round(.299*r+.587*g+.114*b);lum[p]=L;sat[p]=mx-mn;if((p%19)===0)sample.push(L)}
+ sample.sort((a,b)=>a-b);const p70=sample[Math.floor(sample.length*.70)]||180,p85=sample[Math.floor(sample.length*.85)]||210;const bright=clamp((p70+p85)/2-18,145,220);
+ const mask=new Uint8Array(w*h);for(let y=1;y<h-1;y++)for(let xx=1;xx<w-1;xx++){const p=y*w+xx;let av=0,ss=0,n=0;for(let yy=-1;yy<=1;yy++)for(let dx=-1;dx<=1;dx++){const q=p+yy*w+dx;av+=lum[q];ss+=sat[q];n++}av/=n;ss/=n;if(av>=bright&&ss<72)mask[p]=1}
+ // Close small holes caused by printed grid/text.
+ const closed=new Uint8Array(mask);for(let y=2;y<h-2;y++)for(let xx=2;xx<w-2;xx++){const p=y*w+xx;if(mask[p])continue;let n=0;for(let yy=-2;yy<=2;yy++)for(let dx=-2;dx<=2;dx++)n+=mask[p+yy*w+dx];if(n>=15)closed[p]=1}
+ const seen=new Uint8Array(w*h),stack=[],comps=[];for(let p=0;p<closed.length;p++){if(!closed[p]||seen[p])continue;seen[p]=1;stack.length=0;stack.push(p);let count=0,minx=w,maxx=0,miny=h,maxy=0,tl=null,tr=null,br=null,bl=null,tlv=1e9,trv=-1e9,brv=-1e9,blv=1e9;while(stack.length){const q=stack.pop(),xx=q%w,yy=(q/w)|0;count++;minx=Math.min(minx,xx);maxx=Math.max(maxx,xx);miny=Math.min(miny,yy);maxy=Math.max(maxy,yy);const a=xx+yy,b=xx-yy;if(a<tlv){tlv=a;tl={x:xx,y:yy}}if(b>trv){trv=b;tr={x:xx,y:yy}}if(a>brv){brv=a;br={x:xx,y:yy}}if(b<blv){blv=b;bl={x:xx,y:yy}}for(const off of [-1,1,-w,w,-w-1,-w+1,w-1,w+1]){const z=q+off;if(z<0||z>=closed.length||seen[z]||!closed[z])continue;const zx=z%w,zy=(z/w)|0;if(Math.abs(zx-xx)>1||Math.abs(zy-yy)>1)continue;seen[z]=1;stack.push(z)}}if(count>w*h*.08)comps.push({count,minx,maxx,miny,maxy,q:[tl,tr,br,bl]})}
+ comps.sort((a,b)=>b.count-a.count);for(const comp of comps.slice(0,4)){let q=comp.q;if(q.some(v=>!v))continue;const area=quadArea(q);const bw=comp.maxx-comp.minx,bh=comp.maxy-comp.miny;if(area<w*h*.24||bw<w*.55||bh<h*.45)continue;const edge=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);if(Math.min(edge(q[0],q[1]),edge(q[1],q[2]),edge(q[2],q[3]),edge(q[3],q[0]))<Math.min(w,h)*.18)continue;return q.map(v=>({x:v.x/scale,y:v.y/scale}))}
+ return null;
+}
 function autoDetectCorners(){
+ const page=detectPaperQuad();
+ if(page){
+  try{const src=[[0,0],[GRID.W,0],[GRID.W,GRID.H],[0,GRID.H]],dst=page.map(p=>[p.x,p.y]),H=homography(src,dst);const table=GRID.table.map(([x,y])=>projectHomography(H,x,y));if(quadArea(table)>$('alignCanvas').width*$('alignCanvas').height*.18){currentCorners=table;$('analyzeBtn').disabled=false;return true}}catch(e){console.warn('Paper-based alignment failed',e)}
+ }
+ return autoDetectTableLegacy();
+}
+
+function autoDetectTableLegacy(){
  const c=$('alignCanvas'),ctx=c.getContext('2d',{willReadFrequently:true});if(!c.width||!c.height)return false;
  const targetW=Math.min(900,c.width),scale=targetW/c.width,w=Math.max(80,Math.round(c.width*scale)),h=Math.max(60,Math.round(c.height*scale));
  const dcan=document.createElement('canvas');dcan.width=w;dcan.height=h;const dc=dcan.getContext('2d',{willReadFrequently:true});dc.drawImage(c,0,0,w,h);const im=dc.getImageData(0,0,w,h).data;
@@ -129,14 +152,71 @@ function showCellInspect(r,key){if(!currentWarpedCanvas)return;const ci=statColI
 function adjustInspect(delta){if(!currentInspect||!currentAnalysis)return;const {r,key}=currentInspect,inp=$('verifyBody').querySelector(`input[data-r="${r}"][data-k="${key}"]`);if(!inp)return;const v=clamp((parseInt(inp.value||'0',10)||0)+delta,0,99);inp.value=v;inp.dispatchEvent(new Event('input',{bubbles:true}));showCellInspect(r,key)}
 function cropCanvas(src,rect,scale=2){const [x0,y0,x1,y1]=rect,c=document.createElement('canvas');c.width=Math.round((x1-x0)*scale);c.height=Math.round((y1-y0)*scale);const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);ctx.drawImage(src,x0,y0,x1-x0,y1-y0,0,0,c.width,c.height);const im=ctx.getImageData(0,0,c.width,c.height),d=im.data;for(let y=0;y<c.height;y++){let dark=0;for(let x=0;x<c.width;x++){const i=(y*c.width+x)*4,g=d[i]*.299+d[i+1]*.587+d[i+2]*.114;if(g<120)dark++}if(dark>c.width*.65){for(let x=0;x<c.width;x++){const i=(y*c.width+x)*4;d[i]=d[i+1]=d[i+2]=255}}}ctx.putImageData(im,0,0);return c}
 async function getOCRWorker(){if(ocrWorker)return ocrWorker;if(!window.Tesseract)throw Error('OCR engine not loaded.');$('ocrStatus').className='status';$('ocrStatus').textContent='Starting local OCR engine…';const base=new URL('./',location.href);ocrWorker=await Tesseract.createWorker('eng',1,{workerPath:'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/6.0.1/worker.min.js',langPath:'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int',corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@6.1.2',logger:m=>{if(m.status&&m.progress!=null)$('ocrStatus').textContent=`OCR: ${m.status} ${Math.round(m.progress*100)}%`}});return ocrWorker}
-function prepOCR(src,mode='text'){const scale=mode==='name'?3:2.5,c=document.createElement('canvas');c.width=Math.round(src.width*scale);c.height=Math.round(src.height*scale);const x=c.getContext('2d',{willReadFrequently:true});x.imageSmoothingEnabled=true;x.drawImage(src,0,0,c.width,c.height);const im=x.getImageData(0,0,c.width,c.height),d=im.data;let vals=[];for(let i=0;i<d.length;i+=40)vals.push(d[i]*.299+d[i+1]*.587+d[i+2]*.114);const bg=median(vals),thr=clamp(bg-(mode==='hand'?38:52),105,205);for(let i=0;i<d.length;i+=4){const g=d[i]*.299+d[i+1]*.587+d[i+2]*.114,v=g<thr?0:255;d[i]=d[i+1]=d[i+2]=v;d[i+3]=255}x.putImageData(im,0,0);return c}
-async function ocrOne(worker,canvas,whitelist='',mode='text'){const attempts=[{psm:'7',img:prepOCR(canvas,mode)},{psm:'6',img:prepOCR(canvas,mode==='text'?'hand':mode)}];let best={text:'',confidence:0};for(const a of attempts){await worker.setParameters({tessedit_pageseg_mode:a.psm,preserve_interword_spaces:'1',user_defined_dpi:'300',...(whitelist?{tessedit_char_whitelist:whitelist}:{tessedit_char_whitelist:''})});const r=await worker.recognize(a.img);const z={text:(r.data.text||'').replace(/\s+/g,' ').trim(),confidence:num(r.data.confidence)};if(z.confidence>best.confidence||(!best.text&&z.text))best=z}return best}
+function prepOCR(src,mode='text',variant=0){
+ const scale=mode==='name'?4:(mode==='hand'?3.4:3),c=document.createElement('canvas');c.width=Math.max(8,Math.round(src.width*scale));c.height=Math.max(8,Math.round(src.height*scale));const x=c.getContext('2d',{willReadFrequently:true});x.imageSmoothingEnabled=true;x.drawImage(src,0,0,c.width,c.height);const im=x.getImageData(0,0,c.width,c.height),d=im.data,vals=[];for(let i=0;i<d.length;i+=36)vals.push(d[i]*.299+d[i+1]*.587+d[i+2]*.114);const bg=median(vals),thr=clamp(bg-(mode==='hand'?variant===2?22:38:variant===2?35:52),95,218);
+ for(let i=0;i<d.length;i+=4){const g=d[i]*.299+d[i+1]*.587+d[i+2]*.114;let v;if(variant===0){v=clamp((g-(bg-105))*2.15,0,255)}else if(variant===2){v=g<thr?0:255}else{v=g<clamp(thr+18,110,225)?0:255}d[i]=d[i+1]=d[i+2]=v;d[i+3]=255}x.putImageData(im,0,0);return c
+}
+function ocrQuality(text,mode){let q=String(text||'').trim();if(!q)return 0;let score=Math.min(35,q.length*2);if(mode==='name'){score+=(q.match(/[A-Za-z]{3,}/g)||[]).length*12;score-=(q.match(/[^A-Za-z0-9# .'-]/g)||[]).length*5}else if(mode==='hand'){score+=(q.match(/\d+/g)||[]).length*7}return score}
+async function ocrOne(worker,canvas,whitelist='',mode='text'){
+ const psms=mode==='name'?['7','6','13']:['7','6','13'],variants=[0,1,2];let best={text:'',confidence:0,score:-1};for(const variant of variants){const img=prepOCR(canvas,mode,variant);for(const psm of psms){await worker.setParameters({tessedit_pageseg_mode:psm,preserve_interword_spaces:'1',user_defined_dpi:'300',...(whitelist?{tessedit_char_whitelist:whitelist}:{tessedit_char_whitelist:''})});const r=await worker.recognize(img),text=(r.data.text||'').replace(/\s+/g,' ').trim(),confidence=num(r.data.confidence),score=confidence+ocrQuality(text,mode);if(score>best.score)best={text,confidence,score,variant,psm}}}return best
+}
+function cropRosterPart(warped,r,kind){const y0=GRID.ys[1+r]+2,y1=GRID.ys[2+r]-2,x0=GRID.xs[0]+3,x1=GRID.xs[1]-3,w=x1-x0;if(kind==='number')return cropCanvas(warped,[x0,y0,x0+w*.24,y1],3);if(kind==='name')return cropCanvas(warped,[x0+w*.18,y0,x1,y1],2.8);return cropCanvas(warped,[x0,y0,x1,y1],2.5)}
+async function readRosterRow(worker,warped,r){
+ const full=await ocrOne(worker,cropRosterPart(warped,r,'full'),'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789# .-','name');
+ const jersey=await ocrOne(worker,cropRosterPart(warped,r,'number'),'0123456789#','name');
+ const nameRead=await ocrOne(worker,cropRosterPart(warped,r,'name'),"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz .'-",'name');
+ const n=(jersey.text.match(/\d{1,2}/)||[])[0]||'';
+ const nm=cleanOCR(nameRead.text);
+ const combined=((n?'#'+n+' ':'')+(nm||full.text)).trim();
+ return {row:r,text:combined,number:n,name:nm,confidence:Math.max(full.confidence,jersey.confidence,nameRead.confidence),raw:{full:full.text,number:jersey.text,name:nameRead.text}};
+}
 function normalizeName(s){return String(s||'').toLowerCase().replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim()}
-function nameSimilarity(a,b){a=normalizeName(a);b=normalizeName(b);if(!a||!b)return 0;if(a.includes(b)||b.includes(a))return .94;const d=levenshtein(a,b),base=1-d/Math.max(a.length,b.length);const aw=a.split(' '),bw=b.split(' ');let token=0;for(const x of aw)for(const y of bw)token=Math.max(token,1-levenshtein(x,y)/Math.max(x.length,y.length));return Math.max(base,token*.82)}
-async function detectTeamFromRoster(warped){migrateTeams();const worker=await getOCRWorker();$('ocrStatus').className='status';$('ocrStatus').textContent='Reading printed roster names and jersey numbers…';const reads=[];for(let r=0;r<12;r++){const y0=GRID.ys[1+r]+3,y1=GRID.ys[2+r]-3,rect=[GRID.xs[0]+5,y0,GRID.xs[1]-5,y1];const crop=cropCanvas(warped,rect,2.2);const z=await ocrOne(worker,crop,'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789# .-','name');if(z.text&&z.confidence>10)reads.push(z)}
- let bestTeam=activeTeam(),bestScore=-1,bestHits=0;for(const t of settings.teams){let total=0,hits=0;for(const rd of reads){let best=0;for(const p of t.roster||[]){const label=((p.number?'#'+p.number+' ':'')+(p.name||'')).trim();best=Math.max(best,nameSimilarity(rd.text,label),nameSimilarity(rd.text,p.name||''));if(p.number&&new RegExp('(^|\\D)'+String(p.number).replace(/\D/g,'')+'(\\D|$)').test(rd.text))best=Math.max(best,.9)}if(best>=.55){total+=best;hits++}}const score=hits?total+hits*.35:0;if(score>bestScore){bestScore=score;bestHits=hits;bestTeam=t}}
- if(bestHits>=2){activateTeam(bestTeam.id,true);$('sheetTeam').value=bestTeam.id;$('ocrStatus').textContent=`Roster matched ${bestTeam.name} (${bestHits} player matches). Reading header…`;return {team:bestTeam,hits:bestHits,reads}}
- $('sheetTeam').value=activeTeam().id;$('ocrStatus').textContent='Roster OCR was uncertain. Choose the team manually, then verify the counts.';return {team:null,hits:bestHits,reads}
+function nameSimilarity(a,b){
+ a=normalizeName(a);b=normalizeName(b);if(!a||!b)return 0;if(a.includes(b)||b.includes(a))return .94;
+ const d=levenshtein(a,b),base=1-d/Math.max(a.length,b.length),aw=a.split(' '),bw=b.split(' ');let token=0;
+ for(const x of aw)for(const y of bw)token=Math.max(token,1-levenshtein(x,y)/Math.max(x.length,y.length));
+ return Math.max(base,token*.82);
+}
+async function detectTeamFromRoster(warped){
+ migrateTeams();
+ const worker=await getOCRWorker();
+ $('ocrStatus').className='status';
+ $('ocrStatus').textContent='Reading printed roster names and jersey numbers…';
+ const reads=[];
+ for(let r=0;r<12;r++){
+  try{const z=await readRosterRow(worker,warped,r);if(z.text)reads.push(z)}catch(e){console.warn('Roster row OCR failed',r,e)}
+ }
+ let bestTeam=activeTeam(),bestScore=-1,bestHits=0;
+ for(const t of settings.teams){
+  let total=0,hits=0;
+  for(const rd of reads){
+   let best=0;
+   const same=(t.roster||[])[rd.row];
+   if(same){
+    const label=((same.number?'#'+same.number+' ':'')+(same.name||'')).trim();
+    best=Math.max(best,nameSimilarity(rd.text,label)*1.18,nameSimilarity(rd.name,same.name||'')*1.15);
+    if(rd.number&&same.number&&String(rd.number)===String(same.number))best=Math.max(best,1.15);
+   }
+   for(const player of t.roster||[]){
+    const label=((player.number?'#'+player.number+' ':'')+(player.name||'')).trim();
+    best=Math.max(best,nameSimilarity(rd.text,label)*.92,nameSimilarity(rd.name,player.name||'')*.9);
+    if(rd.number&&player.number&&String(rd.number)===String(player.number))best=Math.max(best,.82);
+   }
+   if(best>=.52){total+=best;hits++}
+  }
+  const score=hits?total+hits*.42:0;
+  if(score>bestScore){bestScore=score;bestHits=hits;bestTeam=t}
+ }
+ currentRosterOCR={reads,bestTeamId:bestTeam.id,bestHits,bestScore};
+ console.log('Roster OCR',currentRosterOCR);
+ if(bestHits>=2){
+  activateTeam(bestTeam.id,true);$('sheetTeam').value=bestTeam.id;
+  $('ocrStatus').textContent=`Roster matched ${bestTeam.name} (${bestHits} row matches). Reading header…`;
+  return {team:bestTeam,hits:bestHits,reads};
+ }
+ $('sheetTeam').value=activeTeam().id;
+ $('ocrStatus').textContent='Roster OCR was uncertain. Choose the team manually; the raw OCR result was saved for debugging.';
+ return {team:null,hits:bestHits,reads};
 }
 async function runHeaderOCR(warped){const worker=await getOCRWorker();$('ocrStatus').textContent='Reading handwritten date…';const d=await ocrOne(worker,cropCanvas(warped,GRID.headers.date),'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz/- .','hand');$('ocrStatus').textContent='Reading opponent…';const t=await ocrOne(worker,cropCanvas(warped,GRID.headers.opponent),'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .-&','hand');$('ocrStatus').textContent='Reading set and score…';const ss=await ocrOne(worker,cropCanvas(warped,GRID.headers.setScore),'0123456789-–— ','hand');const parsed=parseDateOCR(d.text);if(parsed)$('sheetDate').value=parsed;const opp=bestOpponent(cleanOCR(t.text));if(opp)$('sheetOpponent').value=opp;const parsedSS=parseSetScoreOCR(ss.text);if(parsedSS.set!=null)$('sheetSet').value=parsedSS.set;if(parsedSS.our!=null)$('ourScore').value=parsedSS.our;if(parsedSS.opp!=null)$('oppScore').value=parsedSS.opp;const low=[d,t,ss].filter(x=>x.confidence<45).length;$('ocrStatus').className='status '+(low?'warn':'good');$('ocrStatus').textContent=low?`Header OCR finished, but ${low} field${low===1?'':'s'} looked uncertain. Verify date, opponent, set, and score.`:'Header OCR finished. Verify date, opponent, set, and score.'}
 function parseSetScoreOCR(text){let q=String(text||'').replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/[—–]/g,'-').replace(/\s+/g,' ').trim();let m=q.match(/(?:^|\D)([1-5])\D+(\d{1,2})\s*-\s*(\d{1,2})(?:\D|$)/);if(m)return{set:Number(m[1]),our:Number(m[2]),opp:Number(m[3])};m=q.match(/(?:^|\D)([1-5])\D+(\d{1,2})\D+(\d{1,2})(?:\D|$)/);if(m)return{set:Number(m[1]),our:Number(m[2]),opp:Number(m[3])};const nums=(q.match(/\d{1,2}/g)||[]).map(Number);return{set:nums.length&&nums[0]>=1&&nums[0]<=5?nums[0]:null,our:nums.length>=3?nums[1]:null,opp:nums.length>=3?nums[2]:null}}

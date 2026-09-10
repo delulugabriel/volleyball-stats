@@ -1,5 +1,5 @@
-const CACHE='volley-stats-v1-6';
-const LOCAL=['./','./index.html','./index.html?v=1.6','./styles.css','./styles.css?v=1.6','./app.js','./app.js?v=1.6','./manifest.webmanifest','./manifest.webmanifest?v=1.6','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./apple-touch-icon.png?v=1.6','./template.png'];
+const CACHE='volley-stats-v1-7';
+const LOCAL=['./','./index.html','./index.html?v=1.7','./styles.css','./styles.css?v=1.7','./app.js','./app.js?v=1.7','./manifest.webmanifest','./manifest.webmanifest?v=1.7','./icon-192.png','./icon-512.png','./apple-touch-icon.png','./apple-touch-icon.png?v=1.7','./template.png'];
 const REMOTE=[
  'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
  'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
