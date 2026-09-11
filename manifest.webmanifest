@@ -1,23 +1,13 @@
 {
-  "name": "Volley Stats \u2014 Offline",
+  "name": "Volley Stats AI",
   "short_name": "Volley Stats",
-  "description": "Private offline volleyball stat-sheet capture and season analysis.",
-  "start_url": "./index.html?v=2.0",
-  "scope": "./",
+  "id": "./volley-stats-ai-v3",
+  "start_url": "./index.html?v=3.0",
   "display": "standalone",
-  "background_color": "#f5f7fa",
+  "background_color": "#f5f6f8",
   "theme_color": "#172033",
   "icons": [
-    {
-      "src": "./icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "./icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ],
-  "id": "./volley-stats"
+    {"src":"./icon-192.png","sizes":"192x192","type":"image/png"},
+    {"src":"./icon-512.png","sizes":"512x512","type":"image/png"}
+  ]
 }
