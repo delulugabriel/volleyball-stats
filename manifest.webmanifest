@@ -1,13 +1,21 @@
 {
   "name": "Volley Stats AI",
   "short_name": "Volley Stats",
-  "id": "./volley-stats-ai-v3",
-  "start_url": "./index.html?v=3.0",
+  "id": "./volley-stats-ai-v31",
+  "start_url": "./index.html?v=3.1",
   "display": "standalone",
-  "background_color": "#f5f6f8",
+  "background_color": "#f4f6f8",
   "theme_color": "#172033",
   "icons": [
-    {"src":"./icon-192.png","sizes":"192x192","type":"image/png"},
-    {"src":"./icon-512.png","sizes":"512x512","type":"image/png"}
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }

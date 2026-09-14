@@ -1,146 +1,60 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#172033">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Volley Stats">
-<link rel="manifest" href="./manifest.webmanifest?v=3.0">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=3.0">
-<link rel="stylesheet" href="./styles.css?v=3.0">
-<title>Volley Stats v3.0</title>
-</head>
-<body>
-<div class="app">
-<header class="topbar">
-  <div class="brand">
-    <svg class="brand-icon" viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="12" fill="#172033"/><circle cx="24" cy="24" r="15" fill="white"/><path d="M24 9c4.7 4 7.5 8.1 8.5 12.4M39 24c-5.7-.1-10.4 1.1-14.2 3.7M31.5 36.9c-2.7-5-6.2-8.6-10.6-10.7M11.6 17.8c5.6.7 10.1 2.7 13.5 6.1M16 37.4c1.4-5.5 4.1-10 8.2-13.4M32.6 13.4c-5 2.5-8.7 5.9-11.1 10.3" fill="none" stroke="#172033" stroke-width="2.3" stroke-linecap="round"/></svg>
-    <div><h1>Volley Stats</h1><small>AI-assisted sheet capture • v3.0</small></div>
-  </div>
-</header>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#172033"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="Volley Stats">
+<link rel="manifest" href="./manifest.webmanifest?v=3.2"><link rel="apple-touch-icon" href="./apple-touch-icon.png?v=3.2">
+<title>Volley Stats AI v3.2</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;background:#f4f6f8}*{box-sizing:border-box}body{margin:0;background:#f4f6f8}.app{max-width:780px;margin:auto;min-height:100vh;padding-bottom:86px}.top{position:sticky;top:0;z-index:5;background:#172033;color:white;padding:13px 16px}.top h1{font-size:20px;margin:0}.top small{opacity:.8}.tabs{display:flex;gap:6px;overflow:auto;background:white;padding:8px;position:sticky;top:60px;z-index:4;border-bottom:1px solid #ddd}.tabs button{white-space:nowrap}.view{display:none;padding:12px}.view.active{display:block}.card{background:white;border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 4px #0001}.card h2,.card h3{margin:0 0 10px}.muted{color:#697386}.tiny{font-size:12px}.notice,.status{padding:10px 12px;border-radius:10px;background:#eef2f7;margin:8px 0}.good{background:#e9f8ef;color:#17653a}.bad{background:#fdecec;color:#942b2b}.warn{background:#fff5db;color:#71530b}.field{margin:8px 0}.field label{display:block;font-size:12px;font-weight:700;margin-bottom:4px}.field input,.field select,.field textarea{width:100%;font:inherit;border:1px solid #ccd3dc;border-radius:9px;padding:10px;background:white}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}button,.filebtn,.buttonlink{border:0;border-radius:10px;padding:10px 13px;background:#172033;color:white;font-weight:700;font:inherit;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}.secondary{background:#e8edf2;color:#172033}.danger{background:#9b2d30}.filebtn input{display:none}.preview{width:100%;max-height:58vh;object-fit:contain;background:#111;border-radius:10px;display:block}.hide{display:none!important}.stats-scroll{overflow:auto;-webkit-overflow-scrolling:touch}.stat-table{border-collapse:collapse;min-width:760px;width:100%;font-size:12px}.stat-table th,.stat-table td{border:1px solid #d6dce3;padding:5px;text-align:center}.stat-table th{background:#eef2f6;position:sticky;top:0}.stat-table td:first-child{text-align:left;min-width:150px}.stat-table input{width:48px;padding:7px 3px;text-align:center;border:1px solid #cbd2da;border-radius:6px;font-size:16px}.uncertain{background:#fff7df}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.metric{background:white;border-radius:12px;padding:10px;text-align:center}.metric b{display:block;font-size:20px}.list-item{border-bottom:1px solid #e2e6ea;padding:9px 0}.row{display:flex;justify-content:space-between;gap:8px}.bottomsafe{height:10px}@media(max-width:480px){.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}}
+</style></head><body><div class="app">
+<div class="top"><h1>Volley Stats AI</h1><small>Original stat sheet • v3.2</small></div>
+<div class="tabs"><button data-view="scan">Scan</button><button data-view="home" class="secondary">Season</button><button data-view="setup" class="secondary">Setup</button></div>
 
-<main class="content">
-<section id="home" class="view active">
-  <div class="hero">
-    <h2 id="seasonTitle">2026 Volleyball</h2>
-    <p>Photograph a stat sheet, let the AI read the tallies, verify the result, then keep the season totals on your phone.</p>
-    <div class="field compact"><label>Team</label><select id="teamFilter"></select></div>
-  </div>
-  <div id="connectionBanner" class="notice warn">Scanner service not configured yet. Open Setup.</div>
-  <div id="homeMetrics" class="metric-grid"></div>
-  <div class="card"><h3>Recent sets</h3><div id="recentSets" class="list"></div></div>
-</section>
+<section id="scan" class="view active">
+<div class="card"><h2>Scan original stat sheet</h2><p class="muted">Use the original form from this weekend. No QR codes or corner alignment are required.</p>
+<div class="actions"><label class="filebtn">Take photo<input id="cameraInput" type="file" accept="image/*" capture="environment"></label><label class="filebtn secondary">Choose from Photos<input id="photoInput" type="file" accept="image/*"></label></div><div id="connScan" class="status warn">Scanner connection not configured.</div></div>
+<div id="work" class="hide">
+<div class="card"><h3>1. Match details</h3><div class="grid"><div class="field"><label>Team</label><select id="scanTeam"></select></div><div class="field"><label>Date</label><input id="scanDate" type="date"></div><div class="field"><label>Opponent</label><input id="opponent"></div><div class="field"><label>Set</label><input id="setNo" type="number" min="1" inputmode="numeric"></div><div class="field"><label>Our score</label><input id="scoreUs" type="number" min="0" inputmode="numeric"></div><div class="field"><label>Their score</label><input id="scoreThem" type="number" min="0" inputmode="numeric"></div></div></div>
+<div class="card"><h3>2. Photo</h3><div id="photoStatus" class="status">Preparing…</div><img id="preview" class="preview"><div class="actions"><button id="send">Read sheet with AI</button><label class="filebtn secondary">Replace photo<input id="replaceInput" type="file" accept="image/*"></label></div><p class="tiny muted">For best results: get the entire page in frame, keep the camera roughly square to the paper, and avoid glare.</p></div>
+<div id="verify" class="card hide"><h3>3. Verify before saving</h3><div id="notes" class="status"></div><div class="stats-scroll"><table class="stat-table"><thead><tr><th>Player</th><th>0</th><th>1</th><th>2</th><th>3</th><th>Pass</th><th>A</th><th>K</th><th>E</th><th>Hit</th><th>SA</th><th>SE</th><th>B</th></tr></thead><tbody id="verifyBody"></tbody></table></div>
+<div class="grid"><div class="field"><label>Earned points (by us)</label><input id="earned" type="number" min="0" inputmode="numeric"></div><div class="field"><label>Unearned points (given away)</label><input id="unearned" type="number" min="0" inputmode="numeric"></div></div>
+<div class="actions"><button id="saveSet">Save verified set</button><button id="rescan" class="secondary">Read again</button></div></div></div></section>
 
-<section id="scan" class="view">
-  <div class="card">
-    <h2>New stat sheet</h2>
-    <p class="muted">No OCR or corner-finding runs on the phone. The full photo is sent to your private scanner service, which returns structured counts for you to verify.</p>
-    <div class="actions">
-      <label class="filebtn primary">Take photo<input id="cameraInput" type="file" accept="image/*" capture="environment"></label>
-      <label class="filebtn secondary">Choose photo<input id="photoInput" type="file" accept="image/*"></label>
-    </div>
-  </div>
+<section id="home" class="view"><div class="card"><h2 id="seasonTitle">Season</h2><div class="field"><label>Team</label><select id="homeTeam"></select></div></div><div id="metrics" class="metrics"></div><div class="card"><h3>Recent sets</h3><div id="recent"></div></div><div class="card"><h3>Player totals</h3><div id="playerTotals" class="stats-scroll"></div></div></section>
 
-  <div id="scanWork" class="hide">
-    <div class="card">
-      <h3>1. Match details</h3>
-      <div class="form-grid">
-        <div class="field"><label>Team</label><select id="scanTeam"></select></div>
-        <div class="field"><label>Date</label><input id="scanDate" type="date"></div>
-        <div class="field"><label>Opponent</label><input id="scanOpponent" placeholder="Opponent"></div>
-        <div class="field"><label>Event <span class="muted">optional</span></label><input id="scanEvent" placeholder="Tournament / event"></div>
-        <div class="field"><label>Set</label><input id="scanSet" type="number" min="1" max="9" inputmode="numeric" placeholder="1"></div>
-        <div class="field"><label>Score</label><div class="score-pair"><input id="scoreUs" type="number" min="0" max="99" inputmode="numeric" placeholder="25"><span>–</span><input id="scoreThem" type="number" min="0" max="99" inputmode="numeric" placeholder="18"></div></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>2. Photo</h3>
-      <div id="imageStatus" class="status">Ready.</div>
-      <img id="preview" class="preview" alt="Stat sheet preview">
-      <div class="actions"><button id="sendScan">Read sheet with AI</button><button id="replacePhoto" class="secondary">Choose another</button></div>
-      <p class="tiny muted">Tip: fill most of the frame with the sheet, avoid glare, and keep all player rows visible. The QR corners can help the model orient the page, but they are no longer required by the app.</p>
-    </div>
-
-    <div id="verifyCard" class="card hide">
-      <div class="verify-head"><div><h3>3. Verify counts</h3><p class="muted tiny">Anything uncertain is highlighted. Correct any number before saving.</p></div><button id="rescanBtn" class="secondary small">Re-scan</button></div>
-      <div id="scanNotes" class="notice"></div>
-      <div class="stats-scroll"><table class="stat-table"><thead><tr><th>Player</th><th>0</th><th>1</th><th>2</th><th>3</th><th>Pass</th><th>A</th><th>K</th><th>E</th><th>Hit</th><th>S</th><th>SA</th><th>SE</th><th>D</th><th>B</th></tr></thead><tbody id="verifyBody"></tbody></table></div>
-      <h4>Team-level error boxes</h4>
-      <div class="error-grid">
-        <div class="field"><label>Opponent errors</label><input id="errOpponent" type="number" min="0" inputmode="numeric"></div>
-        <div class="field"><label>Our unforced errors</label><input id="errUnforced" type="number" min="0" inputmode="numeric"></div>
-        <div class="field"><label>Free-ball / transition</label><input id="errTransition" type="number" min="0" inputmode="numeric"></div>
-        <div class="field"><label>Net / rotation / other</label><input id="errOther" type="number" min="0" inputmode="numeric"></div>
-      </div>
-      <div class="actions"><button id="saveSet">Save verified set</button><button id="cancelScan" class="secondary">Discard</button></div>
-    </div>
-  </div>
-</section>
-
-<section id="sets" class="view">
-  <div class="card"><h2>Saved sets</h2><div class="field compact"><label>Team</label><select id="setsTeam"></select></div></div>
-  <div class="card"><div id="setsList" class="list"></div></div>
-</section>
-
-<section id="players" class="view">
-  <div class="card"><h2>Players</h2><div class="form-grid"><div class="field"><label>Team</label><select id="playerTeam"></select></div><div class="field"><label>Player</label><select id="playerSelect"></select></div></div></div>
-  <div id="playerMetrics" class="metric-grid"></div>
-  <div class="card"><h3>Set history</h3><div id="playerHistory" class="stats-scroll"></div></div>
-</section>
-
-<section id="setup" class="view">
-  <div class="card">
-    <h2>Setup</h2>
-    <div class="field"><label>Season name</label><input id="seasonName" placeholder="2026 Volleyball"></div>
-    <button id="saveSeason">Save season</button>
-  </div>
-
-  <div class="card">
-    <h3>AI scanner connection</h3>
-    <p class="muted tiny">Your OpenAI key stays in the Cloudflare Worker, not in this app. Paste the Worker URL and the private access token you chose during Worker setup.</p>
-    <div class="field"><label>Scanner service URL</label><input id="scannerUrl" placeholder="https://volley-stats-scanner.your-subdomain.workers.dev"></div>
-    <div class="field"><label>Scanner access token</label><input id="scannerToken" type="password" placeholder="Your private app token"></div>
-    <div class="actions"><button id="saveScanner">Save scanner settings</button><button id="testScanner" class="secondary">Test connection</button></div>
-    <div id="scannerTest" class="status">Not tested yet.</div>
-  </div>
-
-  <div class="card">
-    <h3>Teams & rosters</h3>
-    <div class="field"><label>Team slot</label><select id="teamSlot"><option value="0">Team 1</option><option value="1">Team 2</option></select></div>
-    <div class="field"><label>Team name</label><input id="teamName" placeholder="Bellerose Senior Boys"></div>
-    <div class="field"><label>Roster</label><textarea id="rosterText" rows="12" placeholder="#1 Player Name&#10;#2 Player Name&#10;#11 Player Name"></textarea><small>One player per line. Jersey number first, then name.</small></div>
-    <button id="saveTeam">Save team</button>
-  </div>
-
-  <div class="card">
-    <h3>Printable sheet</h3>
-    <p class="muted">Use the v3.4 sheet we designed. The AI scanner is trained by prompt around this exact column layout.</p>
-    <a class="buttonlink secondary" href="./stat-sheet-v3.4.pdf" target="_blank" rel="noopener">Open stat sheet v3.4</a>
-  </div>
-
-  <div class="card">
-    <h3>Backup & export</h3>
-    <div class="actions"><button id="exportJson" class="secondary">Export backup</button><label class="filebtn secondary">Import backup<input id="importJson" type="file" accept="application/json,.json"></label><button id="exportCsv" class="secondary">Export CSV</button></div>
-  </div>
-
-  <div class="card">
-    <h3>Privacy</h3>
-    <p class="muted tiny">Season data and rosters are stored locally in this browser. Only the photo, roster context, and stat-sheet instructions are sent to your scanner Worker during an AI scan. The Worker is configured to call the OpenAI Responses API with <code>store:false</code>.</p>
-  </div>
-</section>
-</main>
-
-<nav class="bottomnav">
-<button data-view="home" class="active"><span>⌂</span>Home</button>
-<button data-view="scan"><span>＋</span>Scan</button>
-<button data-view="sets"><span>≡</span>Sets</button>
-<button data-view="players"><span>◎</span>Players</button>
-<button data-view="setup"><span>⚙</span>Setup</button>
-</nav>
-</div>
-<script src="./app.js?v=3.0"></script>
-</body>
-</html>
+<section id="setup" class="view"><div class="card"><h2>Scanner connection</h2><p class="tiny muted">This is the same Cloudflare Worker you already created.</p><div class="field"><label>Worker URL</label><input id="scannerUrl" autocapitalize="off" autocomplete="off"></div><div class="field"><label>APP_TOKEN</label><input id="scannerToken" type="password" autocapitalize="off" autocomplete="off"></div><div class="actions"><button id="saveConn">Save</button><button id="testConn" class="secondary">Test</button></div><div id="testStatus" class="status">Not tested.</div></div>
+<div class="card"><h3>Season & roster</h3><div class="field"><label>Season name</label><input id="seasonName"></div><div class="field"><label>Team slot</label><select id="teamSlot"><option value="0">Team 1</option><option value="1">Team 2</option></select></div><div class="field"><label>Team name</label><input id="teamName"></div><div class="field"><label>Roster</label><textarea id="roster" rows="12" placeholder="#1 Player Name"></textarea></div><div class="actions"><button id="saveTeam">Save team</button></div></div>
+<div class="card"><h3>Original printable form</h3><a class="buttonlink secondary" href="./original-stat-sheet.pdf" target="_blank">Open original stat sheet</a></div>
+<div class="card"><h3>Backup</h3><div class="actions"><button id="exportJson" class="secondary">Export backup</button><button id="exportCsv" class="secondary">Export CSV</button></div></div></section>
+<div class="bottomsafe"></div></div>
+<script>
+const VERSION='3.2', KEY='volleyStatsAI_v32', OLDKEYS=['volleyStatsAI_v31','volleyStatsAI_v3'];
+const FIELDS=['p0','p1','p2','p3','A','K','E','SA','SE','B']; const $=id=>document.getElementById(id); const today=()=>new Date().toISOString().slice(0,10); const int=v=>Math.max(0,Math.min(999,parseInt(v||0,10)||0)); const uid=()=>Date.now()+'-'+Math.random().toString(36).slice(2);
+function defaults(){return{seasonName:'2026 Volleyball',scannerUrl:'',scannerToken:'',teams:[{id:'team-1',name:'Team 1',roster:[]},{id:'team-2',name:'Team 2',roster:[]}],sets:[]}}
+function load(){try{let raw=localStorage.getItem(KEY); if(!raw){for(const k of OLDKEYS){raw=localStorage.getItem(k);if(raw)break}} let s=raw?JSON.parse(raw):{}; return {...defaults(),...s,teams:s.teams?.length?s.teams:defaults().teams,sets:s.sets||[]}}catch{return defaults()}}
+let state=load(), imageData='', imageMeta=null, result=null;
+function save(){localStorage.setItem(KEY,JSON.stringify(state))} function esc(s=''){return String(s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]))}
+function team(id){return state.teams.find(t=>t.id===id)||state.teams[0]} function pkey(p){return String(p.jersey)+'|'+String(p.name||'').toLowerCase()}
+function pass(v){let n=int(v.p0)+int(v.p1)+int(v.p2)+int(v.p3); return n?(int(v.p1)+2*int(v.p2)+3*int(v.p3))/n:null} function hit(v){return int(v.A)?(int(v.K)-int(v.E))/int(v.A):null}
+function parseRoster(t){return t.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).map((line,i)=>{let m=line.match(/^#?\s*([\w-]+)\s+(.+)$/);return m?{jersey:m[1],name:m[2].trim()}:{jersey:String(i+1),name:line}})}
+function fillTeams(){let o=state.teams.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join(''); ['scanTeam','homeTeam'].forEach(id=>{let old=$(id).value;$(id).innerHTML=o;if(state.teams.some(t=>t.id===old))$(id).value=old})}
+function conn(){let ok=state.scannerUrl&&state.scannerToken; $('connScan').className='status '+(ok?'good':'warn');$('connScan').textContent=ok?'Scanner configured.':'Scanner not configured — open Setup.'}
+function init(){ $('scanDate').value=today(); $('seasonName').value=state.seasonName; $('scannerUrl').value=state.scannerUrl; $('scannerToken').value=state.scannerToken; fillTeams(); loadTeam(); conn(); renderSeason(); bind(); }
+function bind(){document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>show(b.dataset.view));$('cameraInput').onchange=e=>photo(e.target.files?.[0]);$('photoInput').onchange=e=>photo(e.target.files?.[0]);$('replaceInput').onchange=e=>photo(e.target.files?.[0]);$('send').onclick=scan;$('rescan').onclick=scan;$('saveSet').onclick=saveSet;$('saveConn').onclick=saveConn;$('testConn').onclick=testConn;$('teamSlot').onchange=loadTeam;$('saveTeam').onclick=saveTeam;$('homeTeam').onchange=renderSeason;$('exportJson').onclick=exportJSON;$('exportCsv').onclick=exportCSV;}
+function show(id){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id)); if(id==='home')renderSeason();window.scrollTo(0,0)}
+function loadTeam(){let i=+($('teamSlot').value||0),t=state.teams[i];$('teamName').value=t.name||'';$('roster').value=(t.roster||[]).map(p=>`#${p.jersey} ${p.name}`).join('\n')}
+function saveTeam(){let i=+($('teamSlot').value||0),old=state.teams[i]||{id:'team-'+(i+1)};state.teams[i]={id:old.id,name:$('teamName').value.trim()||'Team '+(i+1),roster:parseRoster($('roster').value)};state.seasonName=$('seasonName').value.trim()||'Volleyball Season';save();fillTeams();conn();renderSeason();alert('Team saved.')}
+function saveConn(){state.scannerUrl=$('scannerUrl').value.trim().replace(/\/$/,'');state.scannerToken=$('scannerToken').value.trim();save();conn()}
+async function testConn(){saveConn();let el=$('testStatus');el.className='status';el.textContent='Testing…';try{let r=await fetch(state.scannerUrl+'/health',{method:'GET',headers:{'X-App-Token':state.scannerToken},cache:'no-store'});let txt=await r.text();let j={};try{j=JSON.parse(txt)}catch{} if(!r.ok)throw Error(j.error||txt||('HTTP '+r.status));el.className='status good';el.textContent='Connected • '+(j.version||'scanner')+' • '+(j.model||'model ready')+(j.image_detail?' • '+j.image_detail:'')}catch(e){el.className='status bad';el.textContent='Connection failed: '+e.message}}
+async function photo(file){if(!file)return;show('scan');$('work').classList.remove('hide');$('verify').classList.add('hide');result=null;$('photoStatus').className='status';$('photoStatus').textContent='Preparing iPhone photo…';try{let prepared=await jpegData(file);imageData=prepared.data;imageMeta=prepared;$('preview').src=imageData;$('photoStatus').className='status good';$('photoStatus').textContent='Photo ready • '+prepared.width+'×'+prepared.height+' • '+prepared.mb+' MB';suggest()}catch(e){$('photoStatus').className='status bad';$('photoStatus').textContent='Photo could not be prepared: '+e.message}}
+async function jpegData(file){let source;try{if('createImageBitmap'in window)source=await createImageBitmap(file,{imageOrientation:'from-image'});}catch{} if(!source){source=await new Promise((res,rej)=>{let im=new Image();let u=URL.createObjectURL(file);im.onload=()=>{URL.revokeObjectURL(u);res(im)};im.onerror=()=>{URL.revokeObjectURL(u);rej(Error('iPhone could not decode this photo'))};im.src=u})} let w=source.width||source.naturalWidth,h=source.height||source.naturalHeight,max=2800,s=Math.min(1,max/Math.max(w,h));w=Math.round(w*s);h=Math.round(h*s);let c=document.createElement('canvas');c.width=w;c.height=h;let x=c.getContext('2d',{alpha:false});x.fillStyle='white';x.fillRect(0,0,w,h);x.drawImage(source,0,0,w,h);if(source.close)source.close();let blob=await new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(Error('JPEG conversion failed')),'image/jpeg',.90));let data=await new Promise((res,rej)=>{let fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>rej(Error('Photo conversion failed'));fr.readAsDataURL(blob)});return{data,width:w,height:h,mb:(blob.size/1048576).toFixed(1)}}
+function suggest(){let tid=$('scanTeam').value,d=$('scanDate').value||today(),last=state.sets.filter(s=>s.teamId===tid&&s.date===d).sort((a,b)=>(+b.setNo||0)-(+a.setNo||0))[0];if(last){$('opponent').value=$('opponent').value||last.opponent||'';$('setNo').value=$('setNo').value||((+last.setNo||0)+1)}else $('setNo').value=$('setNo').value||1}
+async function scan(){if(!imageData)return alert('Take or choose a photo first.');if(!state.scannerUrl||!state.scannerToken){show('setup');return alert('Configure the scanner first.')}let t=team($('scanTeam').value),btn=$('send');btn.disabled=true;$('rescan').disabled=true;$('photoStatus').className='status';$('photoStatus').textContent='Reading original stat sheet with AI…';try{let payload={image:imageData,template_version:'original-2026',team:{name:t.name,roster:t.roster},metadata:{date:$('scanDate').value,opponent:$('opponent').value,set:$('setNo').value}};let ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),105000);let r=await fetch(state.scannerUrl+'/scan',{method:'POST',headers:{'Content-Type':'application/json','X-App-Token':state.scannerToken},body:JSON.stringify(payload),signal:ctl.signal,cache:'no-store'});clearTimeout(timer);let txt=await r.text(),j={};try{j=JSON.parse(txt)}catch{} if(!r.ok)throw Error((j.error||txt||('HTTP '+r.status))+(j.request_id?' • Request '+j.request_id:''));result=normalize(j.result||{});verify();$('photoStatus').className='status good';$('photoStatus').textContent='AI read complete • '+(j.model||'model')+(j.image_detail?' • '+j.image_detail:'')+'. Check the numbers below.';$('verify').classList.remove('hide');$('verify').scrollIntoView({behavior:'smooth'})}catch(e){$('photoStatus').className='status bad';$('photoStatus').textContent=e.name==='AbortError'?'Scan timed out after 105 seconds. Try again on a strong connection.':'Scan failed: '+e.message}finally{btn.disabled=false;$('rescan').disabled=false}}
+function normalize(raw){let t=team($('scanTeam').value),found=raw.players||[],byJ=new Map(found.map(p=>[String(p.jersey).trim(),p])),roster=t.roster?.length?t.roster:found.map(p=>({jersey:p.jersey,name:p.name}));let players=roster.map((rp,i)=>{let s=byJ.get(String(rp.jersey).trim())||found.find(p=>String(p.name||'').toLowerCase()===String(rp.name||'').toLowerCase())||{};let o={jersey:String(rp.jersey||s.jersey||''),name:rp.name||s.name||('Player '+(i+1)),confidence:+s.confidence||0};FIELDS.forEach(k=>o[k]=int(s[k]));return o});return {...raw,players}}
+function verify(){let unc=new Set((result.uncertain_fields||[]).map(String));$('verifyBody').innerHTML=result.players.map((p,i)=>{let u=p.confidence<75||[...unc].some(x=>x.startsWith(p.jersey+'.'));let inp=k=>`<input data-r="${i}" data-k="${k}" type="number" min="0" inputmode="numeric" value="${p[k]}">`;return `<tr class="${u?'uncertain':''}"><td><b>#${esc(p.jersey)} ${esc(p.name)}</b><br><small>${Math.round(p.confidence)}% confidence</small></td><td>${inp('p0')}</td><td>${inp('p1')}</td><td>${inp('p2')}</td><td>${inp('p3')}</td><td class="pc">${pass(p)?.toFixed(2)??'—'}</td><td>${inp('A')}</td><td>${inp('K')}</td><td>${inp('E')}</td><td class="hc">${hit(p)?.toFixed(3)??'—'}</td><td>${inp('SA')}</td><td>${inp('SE')}</td><td>${inp('B')}</td></tr>`}).join('');$('verifyBody').querySelectorAll('input').forEach(x=>x.oninput=e=>{let i=+e.target.dataset.r,k=e.target.dataset.k;result.players[i][k]=int(e.target.value);let tr=e.target.closest('tr');tr.querySelector('.pc').textContent=pass(result.players[i])?.toFixed(2)??'—';tr.querySelector('.hc').textContent=hit(result.players[i])?.toFixed(3)??'—'});$('earned').value=int(result.team_totals?.earned_points);$('unearned').value=int(result.team_totals?.unearned_points);let n=[result.sheet_notes,(result.uncertain_fields||[]).length?'Double-check: '+result.uncertain_fields.join(', '):''].filter(Boolean).join(' ');$('notes').className='status '+((result.uncertain_fields||[]).length?'warn':'good');$('notes').textContent=n||'No specific uncertainties reported.'}
+function saveSet(){if(!result)return;document.querySelectorAll('#verifyBody input').forEach(x=>result.players[+x.dataset.r][x.dataset.k]=int(x.value));state.sets.push({id:uid(),createdAt:new Date().toISOString(),teamId:$('scanTeam').value,date:$('scanDate').value||today(),opponent:$('opponent').value.trim(),setNo:String($('setNo').value||''),scoreUs:$('scoreUs').value,scoreThem:$('scoreThem').value,players:result.players,team_totals:{earned_points:int($('earned').value),unearned_points:int($('unearned').value)},scan_notes:result.sheet_notes||'',template:'original'});save();renderSeason();alert('Set saved.');imageData='';imageMeta=null;result=null;$('work').classList.add('hide');show('home')}
+function aggregate(sets,pk=null){let a={sets:0,p0:0,p1:0,p2:0,p3:0,A:0,K:0,E:0,SA:0,SE:0,B:0};sets.forEach(s=>(s.players||[]).forEach(p=>{if(pk&&pkey(p)!==pk)return;a.sets++;FIELDS.forEach(k=>a[k]+=int(p[k]))}));a.pass=pass(a);a.hit=hit(a);return a}
+function renderSeason(){fillTeams();$('seasonTitle').textContent=state.seasonName;let tid=$('homeTeam').value||state.teams[0].id,sets=state.sets.filter(s=>s.teamId===tid);let a=aggregate(sets);let uniqSets=sets.length;$('metrics').innerHTML=`<div class="metric">Sets<b>${uniqSets}</b></div><div class="metric">Pass avg<b>${a.pass===null?'—':a.pass.toFixed(2)}</b></div><div class="metric">Hit %<b>${a.hit===null?'—':a.hit.toFixed(3)}</b></div><div class="metric">Kills<b>${a.K}</b></div><div class="metric">Aces<b>${a.SA}</b></div><div class="metric">Blocks<b>${a.B}</b></div>`;$('recent').innerHTML=sets.slice().sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt)).slice(0,10).map(s=>`<div class="list-item"><div class="row"><b>${esc(s.opponent||'Opponent')} • Set ${esc(s.setNo||'?')}</b><span>${esc(s.scoreUs||'')} ${s.scoreUs!==''?'–':''} ${esc(s.scoreThem||'')}</span></div><small>${esc(s.date||'')}</small></div>`).join('')||'<p class="muted">No saved sets yet.</p>';let t=team(tid),rows=(t.roster||[]).map(p=>{let z=aggregate(sets,pkey(p));return `<tr><td>#${esc(p.jersey)} ${esc(p.name)}</td><td>${z.pass===null?'—':z.pass.toFixed(2)}</td><td>${z.A}</td><td>${z.K}</td><td>${z.E}</td><td>${z.hit===null?'—':z.hit.toFixed(3)}</td><td>${z.SA}</td><td>${z.SE}</td><td>${z.B}</td></tr>`}).join('');$('playerTotals').innerHTML=rows?`<table class="stat-table"><thead><tr><th>Player</th><th>Pass</th><th>A</th><th>K</th><th>E</th><th>Hit</th><th>SA</th><th>SE</th><th>B</th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="muted">Add a roster in Setup.</p>'}
+function exportJSON(){dl(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),'volley-stats-backup-'+today()+'.json')} function exportCSV(){let r=[['Team','Date','Opponent','Set','Us','Them','Jersey','Player','0','1','2','3','Pass','A','K','E','Hit','SA','SE','B','Earned Points','Unearned Points']];state.sets.forEach(s=>(s.players||[]).forEach(p=>r.push([team(s.teamId).name,s.date,s.opponent,s.setNo,s.scoreUs,s.scoreThem,p.jersey,p.name,p.p0,p.p1,p.p2,p.p3,pass(p)?.toFixed(3)??'',p.A,p.K,p.E,hit(p)?.toFixed(3)??'',p.SA,p.SE,p.B,s.team_totals?.earned_points||0,s.team_totals?.unearned_points||0])));let csv=r.map(a=>a.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');dl(new Blob([csv],{type:'text/csv'}),'volley-stats-'+today()+'.csv')} function dl(b,n){let a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+init();
+</script></body></html>
